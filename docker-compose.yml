@@ -1,0 +1,29 @@
+version: '3.7'
+
+services:
+  nginx:
+    build: ./services/nginx
+    ports:
+      - 80:80
+    depends_on:
+      - webapp
+    volumes:
+      - ./services/nginx/var/www:/var/www
+      - volume-for-sockets:/var/run
+
+  webapp:
+    container_name: 'webapp'
+    build: ./services/webapp
+    environment:
+      - FASTAPI_PORT=${FASTAPI_PORT}
+    expose:
+      - "${FASTAPI_PORT}"
+    volumes:
+      - type: volume
+        source: volume-for-sockets
+        target: /var/run
+      # Bindmount to achieve hot reloading
+      - ./services/webapp/app:/app
+
+volumes:
+  volume-for-sockets:
