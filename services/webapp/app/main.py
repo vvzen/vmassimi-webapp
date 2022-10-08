@@ -7,12 +7,6 @@ app = FastAPI()
 print("--> running main.py")
 
 
-@app.get('/api')
+@app.get('/app')
 def read_root():
     return {'Hello': "World"}
-
-
-@app.get("/api/items/{item_id}")
-def read_item(item_id: int, q: Union[str, None] = None):
-    return {"item_id": item_id, "q": q}
-

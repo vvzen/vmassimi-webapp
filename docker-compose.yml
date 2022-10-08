@@ -14,10 +14,6 @@ services:
   webapp:
     container_name: 'webapp'
     build: ./services/webapp
-    environment:
-      - FASTAPI_PORT=${FASTAPI_PORT}
-    expose:
-      - "${FASTAPI_PORT}"
     volumes:
       - type: volume
         source: volume-for-sockets

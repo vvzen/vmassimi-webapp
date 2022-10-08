@@ -6,5 +6,4 @@ RUN python3.9 -m pip install -r requirements.txt
 
 COPY ./app /src/app
 
-#CMD ["uvicorn", "app.main:app", "--proxy-headers", "--host", "0.0.0.0", "--port", "${FASTAPI_PORT}"]
 CMD ["bash", "-c", "uvicorn app.main:app --uds /var/run/uvicorn.sock --proxy-headers --forwarded-allow-ips='*'"]
