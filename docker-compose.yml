@@ -19,7 +19,7 @@ services:
         source: volume-for-sockets
         target: /var/run
       # Bindmount to achieve hot reloading
-      - ./services/webapp/app:/app
+      - ./services/webapp/src:/app/src
 
 volumes:
   volume-for-sockets:

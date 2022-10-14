@@ -1,9 +1,12 @@
 FROM python:3.9
 
-WORKDIR /src
-COPY requirements.txt /src/requirements.txt
+# Install rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
+
+WORKDIR /app
+COPY requirements.txt /app/requirements.txt
 RUN python3.9 -m pip install -r requirements.txt
 
-COPY ./app /src/app
+ENV PATH="${HOME}/.cargo/bin:${PATH}"
 
-CMD ["bash", "-c", "uvicorn app.main:app --uds /var/run/uvicorn.sock --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["python3", "src/main.py"]
