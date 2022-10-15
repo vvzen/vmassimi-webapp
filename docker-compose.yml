@@ -9,17 +9,7 @@ services:
       - webapp
     volumes:
       - ./services/nginx/var/www:/var/www
-      - volume-for-sockets:/var/run
 
   webapp:
     container_name: 'webapp'
-    build: ./services/webapp
-    volumes:
-      - type: volume
-        source: volume-for-sockets
-        target: /var/run
-      # Bindmount to achieve hot reloading
-      - ./services/webapp/src:/app/src
-
-volumes:
-  volume-for-sockets:
+    build: ./services/webapp-rust

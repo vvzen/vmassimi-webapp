@@ -1,0 +1,13 @@
+[package]
+name = "webapp-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.21.2", features = ["full"]}
+axum = "0.5.16"
+serde_json = "1.0.86"
+
+# When crosscompiling for linux, tell rustc how to find the linker
+[target.x86_64-unknown-linux-gnu]
+linker = "x86_64-unknown-linux-gnu-gcc"
