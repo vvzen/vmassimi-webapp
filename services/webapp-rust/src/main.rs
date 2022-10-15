@@ -18,7 +18,8 @@ const APP_VERSION: &'static str = "v0.1.0";
 
 #[tokio::main]
 async fn main() {
-    let address = SocketAddr::from(([127, 0, 0, 1], PORT_NUM));
+    //let address = SocketAddr::from(([0, 0, 0, 1], PORT_NUM));
+    let address = format!("0.0.0.0:{}", PORT_NUM);
     println!("Axum server running on {}", address);
 
     // Create the routes
@@ -31,7 +32,7 @@ async fn main() {
     // Run the app via hyper
     // axum::Server is a re-export of hyper::Server
     // (https://github.com/hyperium/hyper)
-    axum::Server::bind(&address)
+    axum::Server::bind(&address.parse().unwrap())
         .serve(app.into_make_service())
         .await
         .unwrap();
@@ -47,12 +48,6 @@ async fn index() -> impl IntoResponse {
         app_version: APP_VERSION,
     };
     HtmlTemplate(template)
-}
-
-// A sample route returning plain text
-async fn hello_world() -> &'static str {
-    println!("Serving plain text..");
-    "Hello, World!"
 }
 
 // A sample route returning JSON
@@ -146,8 +141,12 @@ where
     }
 }
 
-// Convert bytes to human-readable values
+// -----------------------------------------------------------------------------
+// Various utility functions
+// -----------------------------------------------------------------------------
+
 fn bytes_to_human_readable(num_bytes: f64) -> String {
+    // Convert bytes to human-readable values
     // This function might not be perfect and very optimized, but at least I wrote it myself!
 
     // Since this is for humans, I'm not using bi-bytes (which use 1024 as base)
@@ -162,6 +161,7 @@ fn bytes_to_human_readable(num_bytes: f64) -> String {
 
     let file_size_in_unit = num_bytes / base.powf(exponent as f64);
     let file_size_human_readable = file_size_in_unit.to_string();
+    // Use only the first 3 digit to represent the number, it will be enough
     let result = format!("~{} {}", &file_size_human_readable[0..4], unit_to_use);
 
     result
