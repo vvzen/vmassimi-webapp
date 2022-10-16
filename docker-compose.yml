@@ -13,3 +13,8 @@ services:
   webapp:
     container_name: 'webapp'
     build: ./services/webapp-rust
+    volumes:
+      - uploaded_data:/app/data
+
+volumes:
+  uploaded_data:
