@@ -11,10 +11,15 @@ use axum::{
 use serde_json::{json, Value};
 use std::fs;
 use std::net::SocketAddr;
+use std::path::Path;
+use std::time::{Duration, SystemTime};
 use tokio;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt; // trait needed for write_all()
 
 const PORT_NUM: u16 = 3000;
 const APP_VERSION: &'static str = "v0.1.0";
+const ENTRY_POINT_DIR_NAME: &'static str = "PROGRAMM"; // arbitrary name given by vmassimi
 
 #[tokio::main]
 async fn main() {
@@ -26,8 +31,9 @@ async fn main() {
     let app = Router::new()
         .route("/", get(index))
         .route("/hello/:name", get(hello_name))
-        .route("/json", get(hello_json))
-        .route("/upload", post(upload_file));
+        .route("/api/json", get(hello_json))
+        .route("/upload-archive", post(upload_archive))
+        .route("/inventory", get(inventory));
 
     // Run the app via hyper
     // axum::Server is a re-export of hyper::Server
@@ -62,45 +68,109 @@ async fn hello_name(extract::Path(name): extract::Path<String>) -> impl IntoResp
     HtmlTemplate(template)
 }
 
+async fn inventory() -> impl IntoResponse {
+    // TODO: Read all of the images that we have
+
+    let template = InventoryTemplate {};
+    HtmlTemplate(template)
+}
+
 // TODO: implement Content-length limit via RequestBodyLimitLayer
 // https://docs.rs/axum/latest/axum/extract/struct.ContentLengthLimit.html
 // https://github.com/tokio-rs/axum/blob/0.5.x/examples/multipart-form/src/main.rs
-async fn upload_file(mut multipart: Multipart) {
-    while let Some(field) = multipart.next_field().await.unwrap() {
+async fn upload_archive(mut multipart: Multipart) -> Result<(), (StatusCode, String)> {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
+    {
+        // FIXME: watch training on map_err()
+
         // Parse the current upload
-        let name = field.name().unwrap().to_string();
-        let data = field.bytes().await.unwrap();
+        match field.name() {
+            Some(r) => {
+                let name = r.to_string();
 
-        if name == "content-type" {
-            let content_type;
-            match std::str::from_utf8(&data) {
-                Ok(r) => {
-                    content_type = r;
-                    eprintln!("Content type is {}", content_type);
+                let data;
+                match field.bytes().await {
+                    Ok(d) => {
+                        data = d;
+                    }
+                    Err(e) => {
+                        return Err((StatusCode::BAD_REQUEST, e.to_string()));
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Failed to parse field data as UTF8 string: {}", e);
+
+                // Parse content type
+                if name == "content-type" {
+                    let content_type;
+                    match std::str::from_utf8(&data) {
+                        Ok(r) => {
+                            content_type = r;
+                            eprintln!("Content type is {}", content_type);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to parse field data as UTF8 string: {}", e);
+                            return Err((StatusCode::BAD_REQUEST, e.to_string()));
+                        }
+                    }
+                    continue;
+                }
+                if !name.contains(".tar.gz") {
+                    eprintln!("Skipping file since it's not a .tar.gz archive");
+                    continue;
+                }
+
+                let human_readable_size = bytes_to_human_readable(data.len() as f64);
+                println!("Length of '{}' is {} bytes", &name, &human_readable_size);
+
+                let save_path = Path::new("/app/data/archives").join(&name);
+                println!("Saving file to disk to {}", save_path.display());
+
+                // TODO: Keep track of versions of the same file
+
+                // Keep track of elapsed time, for benchmarking reasons
+                let current_time = SystemTime::now();
+
+                // Save the data to disk
+                let mut file;
+                match File::create(&save_path).await {
+                    Ok(f) => {
+                        file = f;
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to create file to disk. Error: {}", e);
+                        return Err((StatusCode::BAD_REQUEST, e.to_string()));
+                    }
+                }
+                match file.write_all(&data).await {
+                    Ok(_) => {
+                        println!("{} written to disk!", save_path.display());
+                    }
+                    Err(e) => {
+                        eprintln!("Failed writing file to disk. Error: {}", e);
+                        return Err((StatusCode::BAD_REQUEST, e.to_string()));
+                    }
+                }
+                match current_time.elapsed() {
+                    Ok(elapsed) => {
+                        println!("Saving file to disk took {} seconds", elapsed.as_secs());
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to get elapsed time. Error: {}", e);
+                    }
                 }
             }
-            continue;
-        }
-        if !name.contains(".tar.gz") {
-            eprintln!("Skipping file since it's not a .tar.gz archive");
-            continue;
-        }
-
-        let human_readable_size = bytes_to_human_readable(data.len() as f64);
-        println!("Length of '{}' is {} bytes", &name, &human_readable_size);
-
-        match fs::write(&name, &data) {
-            Ok(()) => {
-                println!("File written to disk");
-            }
-            Err(e) => {
-                eprintln!("Failed writing file to disk. Error: {}", e);
+            None => {
+                return Err((
+                    StatusCode::EXPECTATION_FAILED,
+                    String::from("No field name in multipart data"),
+                ))
             }
         }
     }
+
+    Ok(())
 }
 
 // -----------------------------------------------------------------------------
@@ -122,6 +192,10 @@ struct HelloTemplate {
 struct IndexTemplate {
     app_version: &'static str,
 }
+
+#[derive(Template)]
+#[template(path = "inventory.html")]
+struct InventoryTemplate {}
 
 // Implement the functionality required to render Generic Askama templates
 // into our own HtmlTemplates to be served back from our server

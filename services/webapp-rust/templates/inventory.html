@@ -17,10 +17,10 @@
         <div class="collapse navbar-collapse" id="navbarCollapse">
           <ul class="navbar-nav me-auto mb-2 mb-md-0">
             <li class="nav-item">
-              <a class="nav-link active" aria-current="page" href="#">Upload</a>
+              <a class="nav-link" href="/app">Upload</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="/app/inventory">Inventario</a>
+              <a class="nav-link active" aria-current="page" href="#">Inventario</a>
             </li>
             <li class="nav-item">
               <a class="nav-link disabled">Preview</a>
@@ -41,42 +41,7 @@
         <div class="col"></div>
 
         <div class="col-8">
-          <h1 class="mt-5 mb-3">Carica nuovo archivio</h1>
-
-          <form name="file-upload-form">
-            <div class="input-group mb-3">
-              <input type="file" class="btn-secondary form-control" id="upload-input">
-              <button class="btn btn-primary input-group-text" id="submit-input">Upload</button>
-            </div>
-
-            <label class="pt-2 pb-4">
-              File size unit:
-              <select class="unit" name="unit" id="unit-choice">
-                <option value="bytes">Bytes ( / 1000)</option>
-                <option value="bibytes">BiBytes ( / 1024)</option>
-              </select>
-            </label>
-
-            <div id="upload-data-info" style="visibility: hidden;">
-              <p>Total size: <span class="pt-2" id="file-size"></span></p>
-            </div>
-
-            <div id="upload-progress-info" style="visibility: hidden;">
-              <div class="progress">
-                <div id="upload-progress-bar" class="pb-2 progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
-              </div>
-              <p><small>Upload progress: <span class="pt-2" id="upload-progress"></span></small></p>
-            </div>
-
-            <div id="upload-finished-success" class="alert alert-success" role="alert" style="visibility: hidden;">
-              Upload completed!
-            </div>
-
-            <div id="upload-finished-error" class="alert alert-danger" role="alert" style="visibility: collapse;">
-              Upload Failed, check the console log for more info.
-            </div>
-
-          </form>
+          <h1 class="mt-5 mb-3">Inventario corrente</h1>
         </div>
 
         <div class="col"></div>
