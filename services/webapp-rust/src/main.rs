@@ -28,7 +28,10 @@ use tokio::{self, io::AsyncReadExt}; // trait needed for write_all()
 const PORT_NUM: u16 = 3000;
 const APP_VERSION: &'static str = "v0.1.0";
 const ENTRY_POINT_DIR_NAME: &'static str = "PROGRAMM"; // arbitrary name given by vmassimi
+const ARCHIVES_ROOT_DIR: &'static str = "/app/data/archives";
+const ARCHIVES_TMP_DIR: &'static str = "/app/data/archives/tmp";
 const VERSIONS_PATH: &'static str = "/app/data/versions.json";
+const ZFILL_PADDING: usize = 3;
 
 #[tokio::main]
 async fn main() {
@@ -43,6 +46,7 @@ async fn main() {
         .route("/api/json", get(hello_json))
         .route("/upload", get(upload))
         .route("/api/upload-archive", post(upload_archive))
+        .route("/api/inventory", get(list_inventory))
         .route("/inventory", get(inventory));
 
     // Run the app via hyper
@@ -52,6 +56,31 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+// -----------------------------------------------------------------------------
+// Data structures
+// -----------------------------------------------------------------------------
+#[derive(Debug, Serialize)]
+struct InventoryNodeData {
+    name: String,
+    children: Vec<InventoryNodeData>,
+}
+
+#[derive(Debug, Serialize)]
+struct InventoryData {
+    root: String,
+    children: Vec<InventoryNodeData>,
+}
+
+struct ArchiveInfo {
+    name: String,
+    version: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct VersionsData {
+    last_version: i32,
 }
 
 // -----------------------------------------------------------------------------
@@ -92,11 +121,6 @@ async fn hello_name(extract::Path(name): extract::Path<String>) -> impl IntoResp
     HtmlTemplate(template)
 }
 
-struct ArchiveInfo {
-    name: String,
-    version: i32,
-}
-
 async fn inventory() -> impl IntoResponse {
     // TODO: Read all of the images that we have
     // TODO: Create a list of all the archives that were uploaded
@@ -132,6 +156,91 @@ async fn inventory() -> impl IntoResponse {
         archives,
     };
     HtmlTemplate(template)
+}
+
+fn collect_data_from_directory(path: &PathBuf) -> Vec<InventoryNodeData> {
+    let mut nodes_data = Vec::<InventoryNodeData>::new();
+
+    let entries;
+    match fs::read_dir(&path) {
+        Ok(r) => {
+            entries = r;
+        }
+        Err(e) => {
+            eprintln!("Failed to read directory {}. Error: {}", path.display(), e);
+            return nodes_data;
+        }
+    }
+
+    let mut entry_path;
+    let mut entry_name;
+
+    for e in entries {
+        match e {
+            Ok(entry) => {
+                entry_path = entry.path().clone();
+                match entry_path.file_name() {
+                    Some(r) => {
+                        entry_name = r.clone();
+                    }
+                    None => {
+                        continue;
+                    }
+                }
+            }
+            Err(_) => {
+                continue;
+            }
+        }
+
+        let file_name = entry_name.to_str().unwrap_or("unknown_name");
+        let file_name_string = String::from(file_name);
+
+        if entry_path.is_file() {
+            nodes_data.push(InventoryNodeData {
+                name: file_name_string,
+                children: vec![],
+            });
+        }
+        // Recurse
+        else if entry_path.is_dir() {
+            let children = collect_data_from_directory(&entry_path);
+            nodes_data.push(InventoryNodeData {
+                name: String::from(file_name_string),
+                children,
+            });
+        }
+    }
+
+    nodes_data
+}
+
+async fn list_inventory() -> Json<InventoryData> {
+    let latest_version;
+    match get_archive_version().await {
+        Ok(version) => {
+            latest_version = version;
+        }
+        Err(error) => {
+            eprintln!("Failed to get archive version. Error: {}", error.1);
+            let default_data = InventoryData {
+                root: String::from("root"),
+                children: vec![],
+            };
+            return Json(default_data);
+        }
+    }
+
+    // Look on disk and collect information for all files
+    let archive_path = get_archive_path(latest_version);
+    let root_children = collect_data_from_directory(&archive_path);
+
+    let inventory_data = InventoryData {
+        root: String::from("root"),
+        children: root_children,
+    };
+
+    Json(inventory_data)
 }
 
 // TODO: implement Content-length limit via RequestBodyLimitLayer
@@ -190,6 +299,7 @@ async fn upload_archive(mut multipart: Multipart) -> Result<(), (StatusCode, Str
                 let (archive_path, archive_version) = save_archive(data).await?;
                 extract_archive(&archive_path, &archive_version).await?;
                 update_latest_version().await?;
+                clean_up_tmp().await?;
             }
             None => {
                 return Err((
@@ -289,9 +399,8 @@ async fn save_archive(data: axum::body::Bytes) -> Result<(PathBuf, String), (Sta
     let last_version = get_archive_version().await?;
 
     // Understand where to save
-    let padding = 3;
-    let version_padded = format!("{:0padding$}", last_version + 1);
-    let base_dir = Path::new("/app/data/archives/tmp");
+    let version_padded = format!("{:0ZFILL_PADDING$}", last_version + 1);
+    let base_dir = Path::new(ARCHIVES_TMP_DIR);
     let save_path = base_dir.join(format!("{}.tar.gz", version_padded));
     match tokio::fs::create_dir_all(base_dir).await {
         Ok(_) => {}
@@ -340,11 +449,6 @@ async fn save_archive(data: axum::body::Bytes) -> Result<(PathBuf, String), (Sta
         }
     }
     Ok((save_path, version_padded))
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct VersionsData {
-    last_version: i32,
 }
 
 async fn get_archive_version() -> Result<i32, (StatusCode, String)> {
@@ -418,7 +522,7 @@ async fn extract_archive(archive_path: &Path, version: &str) -> Result<(), (Stat
     }
 
     let mut archive = Archive::new(tar);
-    let extraction_path = Path::new("/app/data/archives").join(&version);
+    let extraction_path = Path::new(ARCHIVES_ROOT_DIR).join(&version);
     match archive.unpack(&extraction_path) {
         Ok(()) => {
             println!(
@@ -432,7 +536,8 @@ async fn extract_archive(archive_path: &Path, version: &str) -> Result<(), (Stat
         }
     }
 
-    // TODO: Sanitize the names of the directories and files
+    // Sanitize the names of the directories and files
+    // TODO: Check exit code (to catch python tracebacks)
     let output = Command::new("/app/scripts/sanitize_directories.py")
         .args([&extraction_path])
         .output()
@@ -473,4 +578,24 @@ async fn update_latest_version() -> Result<(), (StatusCode, String)> {
     }
 
     Ok(())
+}
+
+async fn clean_up_tmp() -> Result<(), (StatusCode, String)> {
+    match std::fs::remove_dir_all(ARCHIVES_TMP_DIR) {
+        Ok(_) => {
+            eprintln!("Successfully cleaned up tmp directory.");
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Failed to clean up tmp directory. Error: {}", e);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    }
+}
+
+fn get_archive_path(version: i32) -> PathBuf {
+    let version_padded = format!("{:0ZFILL_PADDING$}", version);
+    let archive_path = Path::new(ARCHIVES_ROOT_DIR).join(version_padded);
+
+    archive_path
 }
