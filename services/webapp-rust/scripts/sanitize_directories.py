@@ -11,11 +11,12 @@ def sanitize_name(file_name):
                          "Received: %s, %s") % (file_name, type(file_name)))
 
     name = file_name.replace(" ", "_")
+    name = file_name.replace("-", "_")
 
     letters = [
         a.lower()
         for a in name
-        if a in string.ascii_letters or a in string.digits or a == "_"
+        if a in string.ascii_letters or a in string.digits or a in ["_", "."]
     ]
 
     return "".join(letters)
@@ -27,10 +28,28 @@ def collect_operations(root_dir):
 
     for root, dirs, files in os.walk(root_dir, topdown=False):
         base_name = os.path.basename(root)
+        parent_dir = os.path.dirname(root)
+
         sanitized_name = sanitize_name(base_name)
         if base_name == sanitized_name:
             continue
-        parent_dir = os.path.dirname(root)
+
+        # Remove hidden and conf files
+        for file in files:
+            full_src_file_path = os.path.join(parent_dir, base_name, file)
+            if file.startswith('.') or file.endswith('.ini'):
+                rename_ops.append(f"rm -f '{full_src_file_path}'")
+                continue
+
+            # Sanitize file names
+            file_sanitized_name = sanitize_name(file)
+            if file_sanitized_name == file:
+                continue
+
+            full_dst_file_path = os.path.join(parent_dir, base_name, file_sanitized_name)
+            rename_ops.append(f"mv '{full_src_file_path}' '{full_dst_file_path}'")
+
+        # Sanitize directory names
         full_src_path = os.path.join(parent_dir, base_name)
         full_dst_path = os.path.join(parent_dir, sanitized_name)
         rename_ops.append(f"mv '{full_src_path}' '{full_dst_path}'")
@@ -56,7 +75,6 @@ def main():
         f.write("\n".join(rename_ops))
 
     os.chmod(target_file, mode=0o0755)
-    #sys.stdout.write(f"{target_file}\n")
 
     # Run the sanitization
     p = subprocess.run([target_file], check=True)
