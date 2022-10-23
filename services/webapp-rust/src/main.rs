@@ -1,3 +1,4 @@
+// Templates and web server
 use askama::Template;
 use axum::{
     body::Body,
@@ -8,18 +9,26 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use flate2::read::GzDecoder;
+use tar::Archive;
+
+// JSON
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+// Filesystem operations
 use std::fs;
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{Duration, SystemTime};
-use tokio;
 use tokio::fs::File;
-use tokio::io::AsyncWriteExt; // trait needed for write_all()
+use tokio::io::AsyncWriteExt;
+use tokio::{self, io::AsyncReadExt}; // trait needed for write_all()
 
 const PORT_NUM: u16 = 3000;
 const APP_VERSION: &'static str = "v0.1.0";
 const ENTRY_POINT_DIR_NAME: &'static str = "PROGRAMM"; // arbitrary name given by vmassimi
+const VERSIONS_PATH: &'static str = "/app/data/versions.json";
 
 #[tokio::main]
 async fn main() {
@@ -29,10 +38,11 @@ async fn main() {
 
     // Create the routes
     let app = Router::new()
-        .route("/", get(index))
+        .route("/", get(upload))
         .route("/hello/:name", get(hello_name))
         .route("/api/json", get(hello_json))
-        .route("/upload-archive", post(upload_archive))
+        .route("/upload", get(upload))
+        .route("/api/upload-archive", post(upload_archive))
         .route("/inventory", get(inventory));
 
     // Run the app via hyper
@@ -48,10 +58,24 @@ async fn main() {
 // Routes
 // -----------------------------------------------------------------------------
 
-// The root of the app
-async fn index() -> impl IntoResponse {
-    let template = IndexTemplate {
+// The entry point of the app
+async fn upload() -> impl IntoResponse {
+    let pages = vec![
+        Page {
+            name: String::from("Upload"),
+            active: true,
+            url: String::from("/app/upload"),
+        },
+        Page {
+            name: String::from("Inventory"),
+            active: false,
+            url: String::from("/app/inventory"),
+        },
+    ];
+    let template = UploadTemplate {
         app_version: APP_VERSION,
+        title: String::from("Upload"),
+        pages,
     };
     HtmlTemplate(template)
 }
@@ -68,10 +92,45 @@ async fn hello_name(extract::Path(name): extract::Path<String>) -> impl IntoResp
     HtmlTemplate(template)
 }
 
+struct ArchiveInfo {
+    name: String,
+    version: i32,
+}
+
 async fn inventory() -> impl IntoResponse {
     // TODO: Read all of the images that we have
+    // TODO: Create a list of all the archives that were uploaded
+    // from there, the user should be able to navigate the uploaded images
+    // Then, for every uploaded image, he should be able to upload a new version
+    let pages = vec![
+        Page {
+            name: String::from("Upload"),
+            active: false,
+            url: String::from("/app/upload"),
+        },
+        Page {
+            name: String::from("Inventory"),
+            active: true,
+            url: String::from("/app/inventory"),
+        },
+    ];
 
-    let template = InventoryTemplate {};
+    let archives = vec![
+        ArchiveInfo {
+            name: String::from("Sphinx"),
+            version: 1,
+        },
+        ArchiveInfo {
+            name: String::from("Sphinx"),
+            version: 2,
+        },
+    ];
+
+    let template = InventoryTemplate {
+        title: String::from("Inventory"),
+        pages,
+        archives,
+    };
     HtmlTemplate(template)
 }
 
@@ -85,6 +144,7 @@ async fn upload_archive(mut multipart: Multipart) -> Result<(), (StatusCode, Str
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     {
         // FIXME: watch training on map_err()
+        // FIXME: make this a bit tidier
 
         // Parse the current upload
         match field.name() {
@@ -124,42 +184,12 @@ async fn upload_archive(mut multipart: Multipart) -> Result<(), (StatusCode, Str
                 let human_readable_size = bytes_to_human_readable(data.len() as f64);
                 println!("Length of '{}' is {} bytes", &name, &human_readable_size);
 
-                let save_path = Path::new("/app/data/archives").join(&name);
-                println!("Saving file to disk to {}", save_path.display());
-
                 // TODO: Keep track of versions of the same file
 
-                // Keep track of elapsed time, for benchmarking reasons
-                let current_time = SystemTime::now();
-
-                // Save the data to disk
-                let mut file;
-                match File::create(&save_path).await {
-                    Ok(f) => {
-                        file = f;
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to create file to disk. Error: {}", e);
-                        return Err((StatusCode::BAD_REQUEST, e.to_string()));
-                    }
-                }
-                match file.write_all(&data).await {
-                    Ok(_) => {
-                        println!("{} written to disk!", save_path.display());
-                    }
-                    Err(e) => {
-                        eprintln!("Failed writing file to disk. Error: {}", e);
-                        return Err((StatusCode::BAD_REQUEST, e.to_string()));
-                    }
-                }
-                match current_time.elapsed() {
-                    Ok(elapsed) => {
-                        println!("Saving file to disk took {} seconds", elapsed.as_secs());
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to get elapsed time. Error: {}", e);
-                    }
-                }
+                // TODO: Have all of the following happen in a different Thread?
+                let (archive_path, archive_version) = save_archive(data).await?;
+                extract_archive(&archive_path, &archive_version).await?;
+                update_latest_version().await?;
             }
             None => {
                 return Err((
@@ -188,14 +218,26 @@ struct HelloTemplate {
 }
 
 #[derive(Template)]
-#[template(path = "index.html")]
-struct IndexTemplate {
+#[template(path = "upload.html")]
+struct UploadTemplate {
     app_version: &'static str,
+    title: String,
+    pages: Vec<Page>,
+}
+
+struct Page {
+    active: bool,
+    name: String,
+    url: String,
 }
 
 #[derive(Template)]
 #[template(path = "inventory.html")]
-struct InventoryTemplate {}
+struct InventoryTemplate {
+    title: String,
+    pages: Vec<Page>,
+    archives: Vec<ArchiveInfo>,
+}
 
 // Implement the functionality required to render Generic Askama templates
 // into our own HtmlTemplates to be served back from our server
@@ -217,6 +259,7 @@ where
 
 // -----------------------------------------------------------------------------
 // Various utility functions
+// FIXME: move in a lib.rs module
 // -----------------------------------------------------------------------------
 
 fn bytes_to_human_readable(num_bytes: f64) -> String {
@@ -239,4 +282,195 @@ fn bytes_to_human_readable(num_bytes: f64) -> String {
     let result = format!("~{} {}", &file_size_human_readable[0..4], unit_to_use);
 
     result
+}
+
+async fn save_archive(data: axum::body::Bytes) -> Result<(PathBuf, String), (StatusCode, String)> {
+    // Ask the DB which version of the file this is
+    let last_version = get_archive_version().await?;
+
+    // Understand where to save
+    let padding = 3;
+    let version_padded = format!("{:0padding$}", last_version + 1);
+    let base_dir = Path::new("/app/data/archives/tmp");
+    let save_path = base_dir.join(format!("{}.tar.gz", version_padded));
+    match tokio::fs::create_dir_all(base_dir).await {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!(
+                "Failed to create dir: {}. Error: {}",
+                save_path.display(),
+                e
+            );
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    }
+
+    eprintln!("Saving file to disk to {}", save_path.display());
+
+    // TODO: Generate a unique checksum?
+
+    // Keep track of elapsed time, for benchmarking reasons
+    let current_time = SystemTime::now();
+
+    let mut file;
+    match File::create(&save_path).await {
+        Ok(f) => {
+            file = f;
+        }
+        Err(e) => {
+            eprintln!("Failed to create file to disk. Error: {}", e);
+            return Err((StatusCode::BAD_REQUEST, e.to_string()));
+        }
+    }
+    match file.write_all(&data).await {
+        Ok(_) => {
+            eprintln!("{} written to disk!", save_path.display());
+        }
+        Err(e) => {
+            eprintln!("Failed writing file to disk. Error: {}", e);
+            return Err((StatusCode::BAD_REQUEST, e.to_string()));
+        }
+    }
+    match current_time.elapsed() {
+        Ok(elapsed) => {
+            eprintln!("Saving file to disk took {} seconds", elapsed.as_secs());
+        }
+        Err(e) => {
+            eprintln!("Failed to get elapsed time. Error: {}", e);
+        }
+    }
+    Ok((save_path, version_padded))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct VersionsData {
+    last_version: i32,
+}
+
+async fn get_archive_version() -> Result<i32, (StatusCode, String)> {
+    // TODO: Have a proper DB, for now a JSON file on disk is enough
+    let versions_file_path = Path::new(&VERSIONS_PATH);
+
+    // If we don't have any, write the initial JSON to disk
+    if !versions_file_path.exists() {
+        let serialized;
+        let initial_data = &VersionsData { last_version: 1 };
+        match serde_json::to_string_pretty(&initial_data) {
+            Ok(r) => {
+                serialized = r;
+            }
+            Err(e) => {
+                eprintln!("Failed to serialize {:#?}. Error: {}", initial_data, e);
+                return Ok(1);
+            }
+        }
+
+        match tokio::fs::write(&versions_file_path, serialized).await {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to create JSON file. Error: {}", e);
+            }
+        }
+    }
+
+    //eprintln!("Reading {}", versions_file_path.display());
+    let file_contents;
+    match tokio::fs::read_to_string(versions_file_path).await {
+        Ok(f) => {
+            file_contents = f;
+        }
+        Err(e) => {
+            eprintln!(
+                "Failed to read {}, error: {}",
+                versions_file_path.display(),
+                e
+            );
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    }
+
+    let data: VersionsData;
+    match serde_json::from_str(&file_contents) {
+        Ok(r) => {
+            data = r;
+            return Ok(data.last_version);
+        }
+        Err(e) => {
+            eprintln!("Failed to deserialize {:?}, error: {}", file_contents, e);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    }
+}
+
+async fn extract_archive(archive_path: &Path, version: &str) -> Result<(), (StatusCode, String)> {
+    eprintln!("Started decompressing and untaring of archive");
+    let tar;
+
+    // Sadly, the 'tar' crate doesn't support async
+    match std::fs::File::open(archive_path) {
+        Ok(tar_gz) => {
+            tar = GzDecoder::new(tar_gz);
+        }
+        Err(e) => {
+            eprintln!("Failed to open tar archive: {}", e);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    }
+
+    let mut archive = Archive::new(tar);
+    let extraction_path = Path::new("/app/data/archives").join(&version);
+    match archive.unpack(&extraction_path) {
+        Ok(()) => {
+            println!(
+                "Successfully unpacked archive to {}",
+                extraction_path.display()
+            );
+        }
+        Err(e) => {
+            eprintln!("Failed to extract tar archive: {}", e);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    }
+
+    // TODO: Sanitize the names of the directories and files
+    let output = Command::new("/app/scripts/sanitize_directories.py")
+        .args([&extraction_path])
+        .output()
+        .unwrap();
+    eprintln!("Output of sanitization process: {:?}", output.stdout);
+
+    Ok(())
+}
+
+async fn update_latest_version() -> Result<(), (StatusCode, String)> {
+    eprintln!("Updating versions file to correct the last version..");
+    let last_version = get_archive_version().await?;
+    let new_version = last_version + 1;
+    let versions_file_path = Path::new(&VERSIONS_PATH);
+
+    let serialized_data;
+    let new_data = &VersionsData {
+        last_version: new_version,
+    };
+    match serde_json::to_string_pretty(&new_data) {
+        Ok(r) => {
+            serialized_data = r;
+        }
+        Err(e) => {
+            eprintln!("Failed to serialize {:#?}. Error: {}", new_data, e);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    }
+
+    match tokio::fs::write(&versions_file_path, serialized_data).await {
+        Ok(_) => {
+            eprintln!("Last version is now {}", last_version);
+        }
+        Err(e) => {
+            eprintln!("Failed to create JSON file. Error: {}", e);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    }
+
+    Ok(())
 }
