@@ -1,21 +1,25 @@
-  const inputElement = document.getElementById("upload-input");
-  const uploadElement = document.getElementById("submit-input");
-  const unitChoice = document.getElementById("unit-choice");
-  const form = document.forms.namedItem("file-upload-form");
+const inputElement = document.getElementById("upload-input");
+const uploadElement = document.getElementById("submit-input");
+const unitChoice = document.getElementById("unit-choice");
+const form = document.forms.namedItem("file-upload-form");
 
-  inputElement.addEventListener("input", handleFiles, false);
-  unitChoice.addEventListener("change", handleFiles, false);
-  form.addEventListener("submit", uploadFiles);
+// Entry points
+// -----------------------------------------------------------------------------
+inputElement.addEventListener("input", handleFiles, false);
+unitChoice.addEventListener("change", handleFiles, false);
+form.addEventListener("submit", uploadFiles);
 
-  function getBaseLog(base, y) {
-    return Math.log(y) / Math.log(base);
-  }
+// Functions
+// -----------------------------------------------------------------------------
+function getBaseLog(base, y) {
+  return Math.log(y) / Math.log(base);
+}
 
-  function map_range(n, start1, stop1, start2, stop2) {
-    return ((n-start1)/(stop1-start1))*(stop2-start2)+start2;
-  };
+function mapRange(n, start1, stop1, start2, stop2) {
+  return ((n-start1)/(stop1-start1))*(stop2-start2)+start2;
+};
 
-  function handleFiles(){
+function handleFiles(){
     // Calculate total size
     let numberOfBytes = 0;
     for (const file of inputElement.files) {
@@ -51,12 +55,24 @@
     uploadInfo.style.visibility = "visible";
 }
 
+function onBeforeUnload(event){
+  // Cancel the event
+  event.preventDefault();
+  let message = "Are you sure you want to exit? You will lose the current progress on the upload!";
+  event.returnValue = message; 
+  return message;
+}
+
 function uploadFiles(event){
+
+  // https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event
+  window.addEventListener('beforeunload', onBeforeUnload);
 
   // TODO: Why do we needs these?
   event.preventDefault();
   event.stopPropagation();
   console.log("Started uploading files...");
+
   // Calculate total size
   const file = inputElement.files[0];
   let totalBytes = file.size;
@@ -87,11 +103,12 @@ function uploadFiles(event){
     progressDiv.style.visibility = "hidden";
     finishedSuccessDiv.style.visibility = "collapse";
     finishedErrorDiv.style.visibility = "visible";
+    window.removeEventListener('beforeunload', onBeforeUnload);
   }
 
   function onProgress(event){
     if (event.lengthComputable){
-      let progress = map_range(event.loaded, 0, event.total, 0, 100);
+      let progress = mapRange(event.loaded, 0, event.total, 0, 100);
       progressBar.ariaValueNow = progress.toString();
       progressBar.style.width = `${progress.toString()}%`;
       if (progress == 100){
@@ -106,6 +123,7 @@ function uploadFiles(event){
   function onUploadFinished(event){
     progressDiv.style.visibility = "hidden";
     finishedSuccessDiv.style.visibility = "visible";
+    window.removeEventListener('beforeunload', onBeforeUnload);
   }
 
   request.upload.addEventListener("error", onError);
@@ -119,3 +137,4 @@ function uploadFiles(event){
   request.open("POST", endpoint);
   request.send(formData);
 }
+
