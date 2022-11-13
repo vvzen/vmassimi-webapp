@@ -1,38 +1,32 @@
 {% extends "base.html" %}
 
 {% block content %}
-
 <main class="flex-shrink-2 m-5">
 
   <div class="container text-center">
     
     <div class="row">
-    
-      <div class="col"></div>
+      <h1 class="mt-5 mb-3 text-center">Inventario</h1>
+    </div>
 
-      <div class="col-8">
-        <h1 class="mt-5 mb-3">Inventario</h1>
-
-        {% for archive in archives %}
-        <ul class="list-group">
-
-          <li class="list-grou-item">
-            <h3>{{archive.name}}</h3>
-            <p class="lead">Version: <span>{{archive.version}}</span></p>
-          </li>
-
-        </ul>
-        {% endfor %}
-
-      </div>
-
-      <div class="col"></div>
-
+    <div class="row">
+      <div id="graph"></div>
     </div>
 
   </div>
 
 </main>
   
+{% endblock %}
+
+{% block scripts %}
+
+  <!-- 3rd party -->
+  <script src="/js/d3.v7.js"></script>
+  <script src="/js/babel.min.js"></script>
+
+  <!-- d3js visualization -->
+  <script src="/js/inventory.js"></script>
 
 {% endblock %}
+

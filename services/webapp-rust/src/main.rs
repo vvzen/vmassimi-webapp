@@ -27,10 +27,12 @@ use tokio::{self, io::AsyncReadExt}; // trait needed for write_all()
 
 const PORT_NUM: u16 = 3000;
 const APP_VERSION: &'static str = "v0.1.0";
-const ENTRY_POINT_DIR_NAME: &'static str = "PROGRAMM"; // arbitrary name given by vmassimi
+const ENTRY_POINT_DIR_NAME: &'static str = "programm"; // arbitrary name given by vmassimi
+
 const ARCHIVES_ROOT_DIR: &'static str = "/app/data/archives";
 const ARCHIVES_TMP_DIR: &'static str = "/app/data/archives/tmp";
 const VERSIONS_PATH: &'static str = "/app/data/versions.json";
+
 const ZFILL_PADDING: usize = 3;
 
 #[tokio::main]
@@ -139,6 +141,7 @@ async fn inventory() -> impl IntoResponse {
         },
     ];
 
+    // FIXME: This is fake data, it should come from a DB
     let archives = vec![
         ArchiveInfo {
             name: String::from("Sphinx"),
@@ -156,6 +159,64 @@ async fn inventory() -> impl IntoResponse {
         archives,
     };
     HtmlTemplate(template)
+}
+
+fn find_entry_point_dir(path: &PathBuf) -> Option<PathBuf> {
+    let entries;
+    match fs::read_dir(&path) {
+        Ok(r) => {
+            entries = r;
+        }
+        Err(e) => {
+            eprintln!("Failed to read directory {}. Error: {}", path.display(), e);
+            return None;
+        }
+    }
+
+    let mut entry_path;
+    let mut entry_name;
+
+    for e in entries {
+        match e {
+            Ok(entry) => {
+                entry_path = entry.path().clone();
+                match entry_path.file_name() {
+                    Some(r) => {
+                        entry_name = r.clone();
+                    }
+                    None => {
+                        continue;
+                    }
+                }
+            }
+            Err(_) => {
+                continue;
+            }
+        }
+
+        let file_name = entry_name.to_str().unwrap_or("unknown_name");
+        let file_name_string = String::from(file_name);
+
+        if entry_path.is_dir() {
+            // Exit condition
+            if file_name_string.contains(ENTRY_POINT_DIR_NAME) {
+                eprintln!("Found entry point of archive: {file_name_string}");
+                return Some(entry_path.canonicalize().unwrap());
+            }
+            // Recurse
+            else {
+                let result = find_entry_point_dir(&entry_path);
+                match result {
+                    Some(_) => {
+                        return result;
+                    }
+                    None => {}
+                }
+            }
+        }
+    }
+
+    None
 }
 
 fn collect_data_from_directory(path: &PathBuf) -> Vec<InventoryNodeData> {
@@ -233,7 +294,20 @@ async fn list_inventory() -> Json<InventoryData> {
 
     // Look on disk and collect information for all files
     let archive_path = get_archive_path(latest_version);
-    let root_children = collect_data_from_directory(&archive_path);
+
+    // Find the directory that actually contains the root of the archive
+    // NB: it has a specific name
+    let entry_point_dir = find_entry_point_dir(&archive_path);
+    let mut input_dir = archive_path.clone();
+    match entry_point_dir {
+        Some(r) => {
+            input_dir = r;
+        }
+        None => {}
+    }
+    eprintln!("Path to input directory: {}", input_dir.display());
+
+    let root_children = collect_data_from_directory(&input_dir);
 
     let inventory_data = InventoryData {
         root: String::from("root"),
@@ -569,7 +643,7 @@ async fn update_latest_version() -> Result<(), (StatusCode, String)> {
 
     match tokio::fs::write(&versions_file_path, serialized_data).await {
         Ok(_) => {
-            eprintln!("Last version is now {}", last_version);
+            eprintln!("Last version is now {}", new_version);
         }
         Err(e) => {
             eprintln!("Failed to create JSON file. Error: {}", e);
