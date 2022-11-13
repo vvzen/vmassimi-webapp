@@ -4,8 +4,8 @@ WORKDIR /app
 
 RUN mkdir -p scripts
 
-COPY scripts/update_centos_mirrors.sh scripts
-RUN scripts/update_centos_mirrors.sh
+COPY scripts/install_python.sh scripts
+RUN scripts/install_python.sh
 
 COPY scripts/run_server.sh scripts
 COPY scripts/generate_permutation.py scripts
