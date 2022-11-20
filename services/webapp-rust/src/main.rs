@@ -16,6 +16,7 @@ use tar::Archive;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 // Filesystem operations
+use chrono::{DateTime, Utc};
 use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -83,6 +84,7 @@ struct ArchiveInfo {
 #[derive(Debug, Serialize, Deserialize)]
 struct VersionsData {
     last_version: i32,
+    last_modified: String,
 }
 
 // -----------------------------------------------------------------------------
@@ -294,6 +296,13 @@ async fn list_inventory() -> Json<InventoryData> {
 
     // Look on disk and collect information for all files
     let archive_path = get_archive_path(latest_version);
+    if !archive_path.as_path().exists() {
+        let inventory_data = InventoryData {
+            root: String::from("root"),
+            children: vec![],
+        };
+        return Json(inventory_data);
+    }
 
     // Find the directory that actually contains the root of the archive
     // NB: it has a specific name
@@ -305,10 +314,17 @@ async fn list_inventory() -> Json<InventoryData> {
         }
         None => {}
     }
+
     eprintln!("Path to input directory: {}", input_dir.display());
+    if !input_dir.as_path().exists() {
+        let inventory_data = InventoryData {
+            root: String::from("root"),
+            children: vec![],
+        };
+        return Json(inventory_data);
+    }
 
     let root_children = collect_data_from_directory(&input_dir);
-
     let inventory_data = InventoryData {
         root: String::from("root"),
         children: root_children,
@@ -532,7 +548,14 @@ async fn get_archive_version() -> Result<i32, (StatusCode, String)> {
     // If we don't have any, write the initial JSON to disk
     if !versions_file_path.exists() {
         let serialized;
-        let initial_data = &VersionsData { last_version: 1 };
+
+        let now: DateTime<Utc> = SystemTime::now().into();
+        let last_modified = now.to_rfc3339();
+
+        let initial_data = &VersionsData {
+            last_version: 1,
+            last_modified,
+        };
         match serde_json::to_string_pretty(&initial_data) {
             Ok(r) => {
                 serialized = r;
@@ -628,8 +651,13 @@ async fn update_latest_version() -> Result<(), (StatusCode, String)> {
     let versions_file_path = Path::new(&VERSIONS_PATH);
 
     let serialized_data;
+    let now: DateTime<Utc> = SystemTime::now().into();
+
+    // Write time of last upload
+    let last_modified = now.to_rfc3339();
     let new_data = &VersionsData {
         last_version: new_version,
+        last_modified,
     };
     match serde_json::to_string_pretty(&new_data) {
         Ok(r) => {
