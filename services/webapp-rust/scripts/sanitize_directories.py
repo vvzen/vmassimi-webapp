@@ -4,8 +4,10 @@ import sys
 import string
 import subprocess
 
+UNDERSCORE_REPLACE_REGEX = re.compile(r'(_)+')
 
-def sanitize_name(file_name):
+
+def sanitize_name(file_name: str) -> str:
     if not isinstance(file_name, str):
         raise TypeError(("Please provide a string."
                          "Received: %s, %s") % (file_name, type(file_name)))
@@ -13,6 +15,7 @@ def sanitize_name(file_name):
     name = file_name.replace(" ", "_")
     name = name.replace("-", "_")
     name = name.replace("+", "plus")
+    name = UNDERSCORE_REPLACE_REGEX.sub('_', name)
 
     letters = [
         a
@@ -23,7 +26,7 @@ def sanitize_name(file_name):
     return "".join(letters).lower()
 
 
-def collect_operations(root_dir):
+def collect_operations(root_dir: str) -> list:
 
     rename_ops = []
 
