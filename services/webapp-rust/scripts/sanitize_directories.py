@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 import os
+import re
 import sys
 import string
 import subprocess
 
 UNDERSCORE_REPLACE_REGEX = re.compile(r'(_)+')
+FINAL_DIGITS_REGEX = re.compile(r'[0-9]+$')
+ZERO_PADDING = 2
 
 
 def sanitize_name(file_name: str) -> str:
@@ -12,16 +15,36 @@ def sanitize_name(file_name: str) -> str:
         raise TypeError(("Please provide a string."
                          "Received: %s, %s") % (file_name, type(file_name)))
 
-    name = file_name.replace(" ", "_")
+    name, ext = os.path.splitext(file_name)
+
+    name = name.replace(" ", "_")
     name = name.replace("-", "_")
-    name = name.replace("+", "plus")
     name = UNDERSCORE_REPLACE_REGEX.sub('_', name)
+
+    # Replace special characters with something safer
+    name = name.replace("+", "plus")
+    name = name.replace("&", "_and_")
+
+    # If we find digits at the end of the name, 0-pad them
+    # Also prepend and underscore, if it's missing
+    match = FINAL_DIGITS_REGEX.search(name)
+    if match:
+        start, end = match.span()
+        current_digit = list(name)[start]
+        new_digit = current_digit.zfill(ZERO_PADDING)
+        if name[start-1] != '_':
+            new_name = list(name)[:start] + ['_', new_digit]
+        else:
+            new_name = list(name)[:start] + [new_digit]
+        name = new_name
 
     letters = [
         a
         for a in name
         if any([[a in string.ascii_letters], [a in string.digits], [a in ("_", ".", )]])
     ]
+    if ext:
+        letters += [ext]
 
     return "".join(letters).lower()
 
