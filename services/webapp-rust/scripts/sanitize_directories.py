@@ -11,15 +11,16 @@ def sanitize_name(file_name):
                          "Received: %s, %s") % (file_name, type(file_name)))
 
     name = file_name.replace(" ", "_")
-    name = file_name.replace("-", "_")
+    name = name.replace("-", "_")
+    name = name.replace("+", "plus")
 
     letters = [
-        a.lower()
+        a
         for a in name
-        if a in string.ascii_letters or a in string.digits or a in ["_", "."]
+        if any([[a in string.ascii_letters], [a in string.digits], [a in ("_", ".", )]])
     ]
 
-    return "".join(letters)
+    return "".join(letters).lower()
 
 
 def collect_operations(root_dir):
