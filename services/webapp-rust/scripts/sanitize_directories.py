@@ -6,9 +6,8 @@ import string
 import subprocess
 
 UNDERSCORE_REPLACE_REGEX = re.compile(r'(_)+')
-FINAL_DIGITS_REGEX = re.compile(r'(?!0)([0-9]){1}$')
 ARCHIVE_NAMING_REGEX = re.compile(r'([0-9]){3}')
-ZERO_PADDING = 2
+NUM_PADDING = 2
 
 
 def sanitize_name(file_name: str) -> str:
@@ -30,18 +29,29 @@ def sanitize_name(file_name: str) -> str:
     name = name.replace("+", "plus")
     name = name.replace("&", "_and_")
 
-    # If we find digits at the end of the name, 0-pad them
-    match = FINAL_DIGITS_REGEX.search(name)
-    if match:
-        start, end = match.span()
-        current_digit = list(name)[start]
-        new_digit = current_digit.zfill(ZERO_PADDING)
-        # Prepend an underscore, if it's missing
-        if name[start-1] != '_':
-            new_name = list(name)[:start] + ['_', new_digit]
-        else:
-            new_name = list(name)[:start] + [new_digit]
-        name = new_name
+    # Add 0-padding if last token is a digit
+    # Handle cases where the last token is already padded ('10, 11, ..')
+    # TODO: this is messy, refactor into its own thing
+    tokens = name.split('_')
+    last_token = tokens[-1]
+    should_add_underscore = False
+    new_tokens = tokens[:]
+
+    if len(last_token) > 1 and last_token[-1].isdigit():
+        if len(last_token) != NUM_PADDING:
+            new_tokens.insert(0, last_token[:-1])
+            last_token = last_token[-1]
+
+    if last_token.isdigit() and len(last_token) != NUM_PADDING:
+        digit_as_str = str(int(last_token))
+        new_token = digit_as_str.zfill(NUM_PADDING)
+        new_tokens.pop()
+        new_tokens.append(new_token)
+
+    new_tokens = [
+        t for t in new_tokens if t != "_"
+    ]
+    name = "_".join(new_tokens)
 
     letters = [
         a
