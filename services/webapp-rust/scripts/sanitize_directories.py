@@ -19,6 +19,10 @@ def sanitize_name(file_name: str) -> str:
     if ARCHIVE_NAMING_REGEX.match(file_name):
         return file_name
 
+    # Fix the entry point name
+    if file_name == 'programm':
+        return 'program'
+
     name, ext = os.path.splitext(file_name)
 
     name = name.replace(" ", "_")

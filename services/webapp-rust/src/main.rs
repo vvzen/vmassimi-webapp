@@ -68,6 +68,8 @@ async fn main() {
 struct InventoryNodeData {
     name: String,
     children: Vec<InventoryNodeData>,
+    is_file: bool,
+    file_path: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -259,10 +261,18 @@ fn collect_data_from_directory(path: &PathBuf) -> Vec<InventoryNodeData> {
         let file_name = entry_name.to_str().unwrap_or("unknown_name");
         let file_name_string = String::from(file_name);
 
+        let file_path = entry_path
+            .canonicalize()
+            .unwrap_or(PathBuf::from("unknown_path"))
+            .display()
+            .to_string();
+
         if entry_path.is_file() {
             nodes_data.push(InventoryNodeData {
                 name: file_name_string,
                 children: vec![],
+                is_file: true,
+                file_path,
             });
         }
         // Recurse
@@ -271,6 +281,8 @@ fn collect_data_from_directory(path: &PathBuf) -> Vec<InventoryNodeData> {
             nodes_data.push(InventoryNodeData {
                 name: String::from(file_name_string),
                 children,
+                is_file: false,
+                file_path,
             });
         }
     }
