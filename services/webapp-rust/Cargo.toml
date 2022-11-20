@@ -16,6 +16,8 @@ tar = "0.4.38"
 flate2 = "1.0.24"
 # Templating
 askama = "0.11.1"
+# Time
+chrono = "0.4.23"
 
 # When crosscompiling for linux, tell rustc how to find the linker
 [target.x86_64-unknown-linux-gnu]
