@@ -6,7 +6,8 @@ import string
 import subprocess
 
 UNDERSCORE_REPLACE_REGEX = re.compile(r'(_)+')
-FINAL_DIGITS_REGEX = re.compile(r'[0-9]+$')
+FINAL_DIGITS_REGEX = re.compile(r'(?!0)([0-9]){1}$')
+ARCHIVE_NAMING_REGEX = re.compile(r'([0-9]){3}')
 ZERO_PADDING = 2
 
 
@@ -14,6 +15,10 @@ def sanitize_name(file_name: str) -> str:
     if not isinstance(file_name, str):
         raise TypeError(("Please provide a string."
                          "Received: %s, %s") % (file_name, type(file_name)))
+
+    # Skip the top-level archive directory
+    if ARCHIVE_NAMING_REGEX.match(file_name):
+        return file_name
 
     name, ext = os.path.splitext(file_name)
 
@@ -26,12 +31,12 @@ def sanitize_name(file_name: str) -> str:
     name = name.replace("&", "_and_")
 
     # If we find digits at the end of the name, 0-pad them
-    # Also prepend an underscore, if it's missing
     match = FINAL_DIGITS_REGEX.search(name)
     if match:
         start, end = match.span()
         current_digit = list(name)[start]
         new_digit = current_digit.zfill(ZERO_PADDING)
+        # Prepend an underscore, if it's missing
         if name[start-1] != '_':
             new_name = list(name)[:start] + ['_', new_digit]
         else:
@@ -95,6 +100,7 @@ def main():
 
     rename_ops = collect_operations(target_dir)
     target_dir_name = os.path.basename(target_dir)
+    target_dir_name = sanitize_name(target_dir_name)
     target_file = f"{current_dir}/operations_for_{target_dir_name}.sh"
 
     with open(target_file, "w") as f:
