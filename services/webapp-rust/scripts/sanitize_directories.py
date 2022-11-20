@@ -26,7 +26,7 @@ def sanitize_name(file_name: str) -> str:
     name = name.replace("&", "_and_")
 
     # If we find digits at the end of the name, 0-pad them
-    # Also prepend and underscore, if it's missing
+    # Also prepend an underscore, if it's missing
     match = FINAL_DIGITS_REGEX.search(name)
     if match:
         start, end = match.span()
