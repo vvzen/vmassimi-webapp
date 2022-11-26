@@ -34,6 +34,7 @@ async fn main() {
         .route("/upload", get(upload))
         .route("/api/upload-archive", post(core::upload_archive))
         .route("/api/inventory", get(core::list_inventory))
+        .route("/api/image", get(core::image_preview))
         .route("/inventory", get(inventory));
 
     // Run the app via hyper

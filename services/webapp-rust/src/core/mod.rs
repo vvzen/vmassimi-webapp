@@ -1,5 +1,5 @@
 // Templates and web server
-use axum::{extract::Multipart, http::StatusCode, response::Json};
+use axum::{extract::Multipart, extract::Query, http::StatusCode, response::Json};
 
 // Filesystem operations
 use chrono::{DateTime, Utc};
@@ -12,6 +12,8 @@ use tar::Archive;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
+use anyhow;
+
 pub mod constants;
 use crate::core::constants::{
     ARCHIVES_ROOT_DIR, ARCHIVES_TMP_DIR, ENTRY_POINT_DIR_NAME, VERSIONS_PATH, ZFILL_PADDING,
@@ -23,6 +25,16 @@ use serde::{Deserialize, Serialize};
 // -----------------------------------------------------------------------------
 // Data structures
 // -----------------------------------------------------------------------------
+#[derive(Debug, Serialize)]
+pub struct ImageData {
+    b64: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImageQuery {
+    pub path: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VersionsData {
     last_version: i32,
@@ -48,6 +60,9 @@ pub struct InventoryData {
     children: Vec<InventoryNodeData>,
 }
 
+// -----------------------------------------------------------------------------
+// Functions
+// -----------------------------------------------------------------------------
 fn find_entry_point_dir(path: &PathBuf) -> Option<PathBuf> {
     let entries;
     match fs::read_dir(&path) {
@@ -542,4 +557,65 @@ fn get_archive_path(version: i32) -> PathBuf {
     let archive_path = Path::new(ARCHIVES_ROOT_DIR).join(version_padded);
 
     archive_path
+}
+
+pub fn get_base64_for_path(path: &Path) -> anyhow::Result<String> {
+    // TODO: cache all of this
+
+    if !path.exists() {
+        let message = format!("Path {} doesn't exist on disk.", path.display());
+        anyhow::bail!(message);
+    }
+
+    let b64_string;
+    eprintln!("Generating base64 of {}", path.display());
+
+    // TODO: make this async
+    match fs::read(path) {
+        Ok(bytes) => {
+            b64_string = base64::encode(bytes);
+        }
+        Err(e) => {
+            let message = format!("Failed to base64 encode {}. Error: {}", path.display(), e);
+            anyhow::bail!(message);
+        }
+    }
+
+    Ok(b64_string)
+}
+
+pub async fn image_preview(query: Query<ImageQuery>) -> Json<ImageData> {
+    // From a base64 that represents the path to the image on disk,
+    // read the image and return a base64 version of the content of the image.
+    let base64_path = &query.path;
+
+    let mut image_as_b64 = String::from("");
+
+    let image_path;
+    match base64::decode(base64_path) {
+        Ok(r) => match std::str::from_utf8(&r) {
+            Ok(s) => {
+                image_path = PathBuf::from(s);
+            }
+            Err(e) => {
+                eprintln!("Failed to decode UTF-8 text from base64. Error: {}", e);
+                return Json(ImageData { b64: image_as_b64 });
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to decode image from input data. Error: {}", e);
+            return Json(ImageData { b64: image_as_b64 });
+        }
+    }
+
+    match get_base64_for_path(&image_path) {
+        Ok(result) => {
+            image_as_b64 = result;
+        }
+        Err(_) => {
+            return Json(ImageData { b64: image_as_b64 });
+        }
+    }
+
+    Json(ImageData { b64: image_as_b64 })
 }

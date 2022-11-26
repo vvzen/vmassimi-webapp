@@ -15,7 +15,7 @@ let margin = {
         left: 90
     },
     width = 1920 - margin.left - margin.right,
-    height = 720 - margin.top - margin.bottom;
+    height = 1020 - margin.top - margin.bottom;
 
 // append the svg object to the body of the page
 // appends a 'group' element to 'svg'
@@ -33,6 +33,11 @@ let transitionDuration = 750;
 // declares a tree layout and assigns the size
 let treemap = d3.tree().size([height, width]);
 let root;
+
+const modalDiv = document.getElementById("filePreview");
+
+let modalCloseButton = document.getElementById('modalCloseButton');
+modalCloseButton.addEventListener('click', onPreviewClose);
 
 d3.json('/app/api/inventory').then((data) => {
 
@@ -88,8 +93,8 @@ function onClick(event, d) {
     
   }
   else {
-    // TODO: show a modal here 
-    alert(`Something important to do with ${d.data.file_path}`)
+    // Show the File Preview modal
+    openPreview(d.data);
 
     // TODO: find the path back to root
   }
@@ -120,7 +125,8 @@ function update(source) {
         .attr('transform', (d) => {
             return `translate(${source.y0}, ${source.x0})`;
         })
-        .on('click', onClick);
+        //.on('click', onClick)
+        //.on('dblclick', onDoubleClick);
 
     // Add Circle for the nodes
     nodeEnter.append('circle')
@@ -167,7 +173,8 @@ function update(source) {
 
             return targetColor;
         })
-        .attr('cursor', 'pointer');
+        .attr('cursor', 'pointer')
+        .on('click', onClick);
 
     // Remove any exiting nodes
     let nodeExit = node.exit().transition()
@@ -224,4 +231,44 @@ function update(source) {
         d.x0 = d.x;
         d.y0 = d.y;
     });
+}
+
+
+function openPreview(data){
+  console.log("Opening File Preview");
+
+  window.filePreviewModal = new bootstrap.Modal(modalDiv, {});
+  window.filePreviewModal.show();
+
+  let title = document.getElementById('filePreviewLabel');
+  title.innerHTML = data.name;
+
+  let body = document.getElementById('filePreviewText');
+  body.innerHTML = data.file_path;
+
+  let imagePathEncoded = btoa(data.file_path);
+  let url = `${window.location.origin}/app/api/image?path=${imagePathEncoded}`;
+
+  let options = {
+    method: 'GET',
+  }
+
+  fetch(url, options)
+    .then((response) => response.json())
+    .then((data) => {
+      let img = document.getElementById('filePreviewImage');
+      img.style.maxWidth = "400px";
+
+      if (data.b64) {
+        img.src = `data:image/png;base64,${data.b64}`;
+      }
+    })
+    .catch((error) => {
+      console.error("Failed to retrive image from API endpoint:", error);
+    });
+}
+
+function onPreviewClose(){
+  console.log("Closing File Preview");
+  window.filePreviewModal.hide();
 }
