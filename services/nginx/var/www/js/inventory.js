@@ -124,9 +124,7 @@ function update(source) {
         .attr('class', 'node')
         .attr('transform', (d) => {
             return `translate(${source.y0}, ${source.x0})`;
-        })
-        //.on('click', onClick)
-        //.on('dblclick', onDoubleClick);
+        });
 
     // Add Circle for the nodes
     nodeEnter.append('circle')
