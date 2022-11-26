@@ -1,4 +1,4 @@
-FROM centos:8
+FROM --platform=linux/amd64 centos:8
 
 WORKDIR /app
 
