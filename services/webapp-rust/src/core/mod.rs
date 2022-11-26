@@ -476,6 +476,7 @@ async fn extract_archive(archive_path: &Path, version: &str) -> Result<(), (Stat
 
     // Sanitize the names of the directories and files
     // TODO: Check exit code (to catch python tracebacks)
+    eprintln!("Running sanitization process..");
     let output = Command::new("/app/scripts/sanitize_directories.py")
         .args([&extraction_path])
         .output()
