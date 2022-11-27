@@ -34,9 +34,12 @@ let transitionDuration = 750;
 let treemap = d3.tree().size([height, width]);
 let root;
 
-const modalDiv = document.getElementById("filePreview");
+const modalDiv = document.getElementById("file-preview");
+const title = document.getElementById('file-preview-label');
+const body = document.getElementById('file-preview-text');
+const img = document.getElementById('file-preview-image');
 
-let modalCloseButton = document.getElementById('modalCloseButton');
+const modalCloseButton = document.getElementById('modal-close-button');
 modalCloseButton.addEventListener('click', onPreviewClose);
 
 d3.json('/app/api/inventory').then((data) => {
@@ -238,10 +241,7 @@ function openPreview(data){
   window.filePreviewModal = new bootstrap.Modal(modalDiv, {});
   window.filePreviewModal.show();
 
-  let title = document.getElementById('filePreviewLabel');
   title.innerHTML = data.name;
-
-  let body = document.getElementById('filePreviewText');
   body.innerHTML = data.file_path;
 
   let imagePathEncoded = btoa(data.file_path);
@@ -254,7 +254,6 @@ function openPreview(data){
   fetch(url, options)
     .then((response) => response.json())
     .then((data) => {
-      let img = document.getElementById('filePreviewImage');
       img.style.maxWidth = "400px";
 
       if (data.b64) {

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <main class="flex-shrink-2 m-5">
+
+    <div class="container text-center">
+      
+      <div class="row">
+        <div class="col"></div>
+
+        <div class="col-8">
+
+          <h1 class="mt-5 mb-3">Gatto random!</h1>
+
+          <p>
+          Genera l'immagine di un gatto partendo da una permutazione random delle varie immagini presenti nell'archivio corrente.
+          Una volta che l'immagine è stata generata, verra mostrata qui sotto.
+          </p>
+
+          <button id="generate-preview-button" type="button" class="btn btn-outline-primary">Genera gatto</button>
+
+          <!-- Placeholder for the final image -->
+          <div id="generated-image-container">
+            <img id="generated-image" class="rounded mx-auto d-block" src="">
+          </div>
+
+        </div>
+
+        <div class="col"></div>
+      </div>
+
+    </div>
+  </main>
+
+{% endblock %}
+
+{% block scripts %}
+  <script src="/js/random.js"></script>
+{% endblock %}

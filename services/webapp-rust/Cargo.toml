@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 # Async framework
 tokio = { version = "1.21.2", features = ["full"]}
+
 # Web server framework
 axum = { version = "0.5.16", features = ["multipart"]}
 # Base64
@@ -27,6 +28,8 @@ anyhow = "1.0.66"
 cached = '0.40.0'
 # Generic system informations
 sysinfo = '0.26.8'
+# Random UUID generation
+uuid = {version = "1.2.2", features = ["v4","fast-rng"]}
 
 # When crosscompiling for linux, tell rustc how to find the linker
 [target.x86_64-unknown-linux-gnu]

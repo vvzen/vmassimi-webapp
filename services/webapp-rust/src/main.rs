@@ -17,7 +17,7 @@ use tokio::runtime::Handle;
 use tokio::{self, io::AsyncReadExt}; // trait needed for write_all()
 
 use crate::core::constants::{APP_VERSION, PORT_NUM};
-use crate::core::ArchiveInfo;
+use crate::core::{ArchiveInfo, Page};
 
 mod core;
 
@@ -28,8 +28,9 @@ async fn main() {
     let metrics = Handle::current().metrics();
     let address = format!("0.0.0.0:{}", PORT_NUM);
     let num_workers = metrics.num_workers();
+
     println!(
-        "Axum server running on {} with {} workers",
+        "TEST - Axum server running on {} with {} workers",
         address, num_workers
     );
 
@@ -38,12 +39,15 @@ async fn main() {
         .route("/", get(upload))
         .route("/hello/:name", get(hello_name))
         .route("/upload", get(upload))
+        .route("/inventory", get(inventory))
+        .route("/random", get(random))
         .route("/api/json", get(hello_json))
         .route("/api/status", get(core::status))
         .route("/api/upload-archive", post(core::upload_archive))
         .route("/api/inventory", get(core::list_inventory))
         .route("/api/image", get(core::image_preview))
-        .route("/inventory", get(inventory));
+        .route("/api/jobs", get(core::get_job))
+        .route("/api/random", post(core::queue_generation_of_random_image));
 
     // Run the app via hyper
     // axum::Server is a re-export of hyper::Server
@@ -58,28 +62,6 @@ async fn main() {
 // Routes
 // -----------------------------------------------------------------------------
 
-// The entry point of the app
-async fn upload() -> impl IntoResponse {
-    let pages = vec![
-        Page {
-            name: String::from("Upload"),
-            active: true,
-            url: String::from("/app/upload"),
-        },
-        Page {
-            name: String::from("Inventory"),
-            active: false,
-            url: String::from("/app/inventory"),
-        },
-    ];
-    let template = UploadTemplate {
-        app_version: APP_VERSION,
-        title: String::from("Upload"),
-        pages,
-    };
-    HtmlTemplate(template)
-}
-
 // A sample route returning JSON
 async fn hello_json() -> Json<Value> {
     println!("Serving JSON..");
@@ -92,23 +74,23 @@ async fn hello_name(extract::Path(name): extract::Path<String>) -> impl IntoResp
     HtmlTemplate(template)
 }
 
+// The entry point of the app
+async fn upload() -> impl IntoResponse {
+    let title = String::from("Upload");
+    let pages = core::get_pages_lists_for_current_page(&title);
+    let template = UploadTemplate {
+        app_version: APP_VERSION,
+        title,
+        pages,
+    };
+    HtmlTemplate(template)
+}
+
 async fn inventory() -> impl IntoResponse {
     // TODO: Read all of the images that we have
     // TODO: Create a list of all the archives that were uploaded
     // from there, the user should be able to navigate the uploaded images
     // Then, for every uploaded image, he should be able to upload a new version
-    let pages = vec![
-        Page {
-            name: String::from("Upload"),
-            active: false,
-            url: String::from("/app/upload"),
-        },
-        Page {
-            name: String::from("Inventory"),
-            active: true,
-            url: String::from("/app/inventory"),
-        },
-    ];
 
     // FIXME: This is fake data, it should come from a DB
     let archives = vec![
@@ -122,11 +104,21 @@ async fn inventory() -> impl IntoResponse {
         },
     ];
 
+    let title = String::from("Inventory");
+    let pages = core::get_pages_lists_for_current_page(&title);
     let template = InventoryTemplate {
-        title: String::from("Inventory"),
+        title,
         pages,
         archives,
     };
+    HtmlTemplate(template)
+}
+
+async fn random() -> impl IntoResponse {
+    let title = String::from("Random");
+    let pages = core::get_pages_lists_for_current_page(&title);
+
+    let template = RandomTemplate { title, pages };
     HtmlTemplate(template)
 }
 
@@ -152,18 +144,19 @@ struct UploadTemplate {
     pages: Vec<Page>,
 }
 
-struct Page {
-    active: bool,
-    name: String,
-    url: String,
-}
-
 #[derive(Template)]
 #[template(path = "inventory.html")]
 struct InventoryTemplate {
     title: String,
     pages: Vec<Page>,
     archives: Vec<ArchiveInfo>,
+}
+
+#[derive(Template)]
+#[template(path = "random.html")]
+struct RandomTemplate {
+    title: String,
+    pages: Vec<Page>,
 }
 
 // Implement the functionality required to render Generic Askama templates

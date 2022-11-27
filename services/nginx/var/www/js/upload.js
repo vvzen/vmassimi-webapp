@@ -3,6 +3,15 @@ const uploadElement = document.getElementById("submit-input");
 const unitChoice = document.getElementById("unit-choice");
 const form = document.forms.namedItem("file-upload-form");
 
+const progressDiv = document.getElementById("upload-progress-info");
+const progressText = document.getElementById("upload-progress");
+const progressBar = document.getElementById("upload-progress-bar");
+const finishedSuccessDiv = document.getElementById("upload-finished-success");
+const finishedErrorDiv = document.getElementById("upload-finished-error");
+const uploadErrorMessage = document.getElementById("upload-error-message");
+
+const EXPECTED_MIME_TYPE = 'application/x-gzip';
+
 // Entry points
 // -----------------------------------------------------------------------------
 inputElement.addEventListener("input", handleFiles, false);
@@ -63,8 +72,35 @@ function onBeforeUnload(event){
   return message;
 }
 
-function uploadFiles(event){
+function sanityCheck(file){
+  
+  if (!file.name.endsWith(".tar.gz")){
+    let errorMessage = `Il file scelto (${file.name}) non finisce con .tar.gz. Sei sicuro sia un archivio TAR GZ?`; 
+    console.error(file);
+    console.error(errorMessage);
+    progressDiv.style.visibility = "hidden";
+    finishedSuccessDiv.style.visibility = "collapse";
+    finishedErrorDiv.style.visibility = "visible";
+    uploadErrorMessage.innerHTML = errorMessage;
+    return false;
+  }
 
+  if (file.type != (EXPECTED_MIME_TYPE)){
+    let errorMessage = `Il MIME-type del file che hai scelto (${file.name}) non è '${EXPECTED_MIME_TYPE}'. Sei sicuro che sia un archivio TAR GZIP?`; 
+    console.error(file);
+    console.error(errorMessage);  
+    progressDiv.style.visibility = "hidden";
+    finishedSuccessDiv.style.visibility = "collapse";
+    finishedErrorDiv.style.visibility = "visible";
+    uploadErrorMessage.innerHTML = errorMessage;
+    return false;
+  }
+
+  return true;
+}
+
+function uploadFiles(event){
+  
   // https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event
   window.addEventListener('beforeunload', onBeforeUnload);
 
@@ -75,19 +111,19 @@ function uploadFiles(event){
 
   // Calculate total size
   const file = inputElement.files[0];
+
+  // If the archive doesn't look like it's an actual tar.gz archive, tell him!
+  if (!sanityCheck(file)){
+    return;
+  }
+
   let totalBytes = file.size;
   
   if (totalBytes <= 0) {
     console.log("Nothing to upload.")
     return;
   }
-  let progressDiv = document.getElementById("upload-progress-info");
   progressDiv.style.visibility = "visible";
-
-  let progressText = document.getElementById("upload-progress");
-  let progressBar = document.getElementById("upload-progress-bar");
-  let finishedSuccessDiv = document.getElementById("upload-finished-success");
-  let finishedErrorDiv = document.getElementById("upload-finished-error");
 
   console.log("File:", file);
   console.log("totalBytes:", totalBytes);

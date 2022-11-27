@@ -11,10 +11,12 @@ STREAM_REGEX = re.compile(r"(?:^(?:Body_Skin_)|^(?:\w+_\d+_))([&]*[A-Za-z0-9&_]*
 CURRENT_STREAM = None
 SKINS_DIR_NAME = "02_body_skins"
 TREES_FILE_NAME = "trees.txt"
+IS_DEBUG = os.getenv("DEBUG", False)
 
 # NB: As usual UNIX practice, stderr is used for logging/errors
 # stdout is used to generate the output we're interesting in
 # this makes the piping easy
+
 
 def get_probability(name):
 
@@ -62,6 +64,7 @@ def pick_variant(variants):
 
     return probabilities[-1][0]
 
+
 def get_stream(file_name):
     match = STREAM_REGEX.match(file_name)
     if not match:
@@ -75,13 +78,17 @@ def get_stream(file_name):
 
 # TODO: once a combination has been chosen, it can't be chosen again!
 
+
 def traverse(tree, branch, root_dir):
 
     global CURRENT_STREAM
 
-    sys.stderr.write("Looking into %s\n" % root_dir)
+    if IS_DEBUG:
+        sys.stderr.write("Looking into %s\n" % root_dir)
     branch.append(os.path.basename(root_dir))
-    sys.stderr.write("\tCurrent branch: %s\n" % branch)
+
+    if IS_DEBUG:
+        sys.stderr.write("\tCurrent branch: %s\n" % branch)
 
     disk_content = os.listdir(root_dir)
 
@@ -92,7 +99,8 @@ def traverse(tree, branch, root_dir):
     ]
     overlays = sorted(overlays)
     if overlays:
-        sys.stderr.write("\tFound overlays: %s\n" % overlays)
+        if IS_DEBUG:
+            sys.stderr.write("\tFound overlays: %s\n" % overlays)
         for overlay in overlays:
             current_branch = branch[:]
             traverse(tree, branch, os.path.join(root_dir, overlay))
@@ -108,13 +116,15 @@ def traverse(tree, branch, root_dir):
 
     if variants:
         chosen_variant = pick_variant(variants)
-        sys.stderr.write(f"\tChosen variant: {chosen_variant}\n")
+        if IS_DEBUG:
+            sys.stderr.write(f"\tChosen variant: {chosen_variant}\n")
         traverse(tree, branch, os.path.join(root_dir, chosen_variant))
 
         return
 
     # 3. Is this a directory with the final leaves?
-    sys.stderr.write("\tNo variants, looking for leaves..\n")
+    if IS_DEBUG:
+        sys.stderr.write("\tNo variants, looking for leaves..\n")
     all_leaves = [
         f for f in disk_content
         if os.path.isfile(os.path.join(root_dir, f))
@@ -128,12 +138,16 @@ def traverse(tree, branch, root_dir):
                 continue
             if match and CURRENT_STREAM == match.groups()[0]:
                 potential_leaves.append(leaf)
-        sys.stderr.write("\tPotential leaves (after filtering "
-                         "for stream): %s\n" % potential_leaves)
+
+        if IS_DEBUG:
+            sys.stderr.write("\tPotential leaves (after filtering "
+                             "for stream): %s\n" % potential_leaves)
     else:
         potential_leaves = all_leaves[:]
-        sys.stderr.write("\tPotential leaves (no filtering): %s\n"
-                         % potential_leaves)
+
+        if IS_DEBUG:
+            sys.stderr.write("\tPotential leaves (no filtering): %s\n"
+                             % potential_leaves)
 
     # This shouldn't happen (every directory should contain something in the
     # end) - but still
@@ -145,10 +159,14 @@ def traverse(tree, branch, root_dir):
     # Pick the skin / stream
     if branch[-1] == SKINS_DIR_NAME:
         CURRENT_STREAM = get_stream(final_leaf)
-        sys.stderr.write(f"\tCurrent stream: %s\n" % CURRENT_STREAM)
+
+        if IS_DEBUG:
+            sys.stderr.write(f"\tCurrent stream: {CURRENT_STREAM}\n")
 
     branch.append(final_leaf)
-    sys.stderr.write(f"\tFound final leaf ({final_leaf}). \n")
+
+    if IS_DEBUG:
+        sys.stderr.write(f"\tFound final leaf ({final_leaf}). \n")
 
     tree.append("/".join(branch))
     return tree
@@ -176,6 +194,9 @@ def generate_permutation(root_dir):
 
 
 def main():
+    # USAGE:
+    # ./generate_permutations.py /some/path/to/sphynx_program/program
+
     if len(sys.argv) < 2:
         sys.stderr.write("No root paths provided. Nothing to do. Exiting..\n")
         sys.exit(1)

@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Path pointing to the compiled Rust app
-image_app="./image-composite/target/release/image-composite"
+image_app="/app/image-composite"
+
 # Path pointing to the first directory containing all of the dir structure
 input_directory="../input_for_sphynx"
 
