@@ -1,6 +1,29 @@
 {% extends "base.html" %}
 
 {% block content %}
+
+<!-- File Preview Modal -->
+<div class="modal fade" id="filePreview" tabindex="-1" role="dialog" aria-labelledby="filePreviewLabel" aria-hidden="true">
+
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+
+        <h5 class="modal-title" id="filePreviewLabel">Modal title</h5>
+
+      </div>
+      <div class="modal-body">
+          <p>Path: <span class="text-monospace" id="filePreviewText"></span></p>
+          <img id ="filePreviewImage" src="" alt="A (weird) cat or cat accessory"/>
+      </div>
+      <div class="modal-footer">
+        <button id="modalCloseButton" type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+        <!-- <button type="button" class="btn btn-primary">Save changes</button> -->
+      </div>
+    </div>
+  </div>
+</div>
+
 <main class="flex-shrink-2 m-5">
 
   <div class="container text-center">

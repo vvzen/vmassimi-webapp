@@ -1,4 +1,4 @@
-FROM centos:8
+FROM --platform=linux/amd64 centos:8
 
 WORKDIR /app
 
@@ -10,6 +10,10 @@ RUN scripts/install_python.sh
 COPY scripts/run_server.sh scripts
 COPY scripts/generate_permutation.py scripts
 COPY scripts/sanitize_directories.py scripts
+
+# Set timezone
+# https://www.gnu.org/software/libc/manual/html_node/TZ-Variable.html
+ENV TZ CET
 
 #ENV PATH="${HOME}/.cargo/bin:${PATH}"
 

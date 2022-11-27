@@ -12,7 +12,30 @@
         <div class="col-8">
           <h1 class="mt-5 mb-3">Carica nuovo archivio</h1>
 
-          <form name="file-upload-form">
+          <div class="m-2">
+
+            <p class="text-left lead">
+            Da questa pagina puoi caricare sul sito un archivio con estensione <mark>.tar.gz</mark> contenente tutte le immagini nella struttura di cartelle concordata.
+            Su Windows, tale archivio puo' essere generato tramite <a href="https://7-zip.org/">7-Zip</a>.
+            </p>
+            <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#tar-gz-more-info" aria-expanded="false" aria-controls="tar-gz-more-info">
+              Maggiori info su come generare tar.gz su Windows
+            </button>
+
+          </div>
+
+          <div class="collapse m-2" id="tar-gz-more-info">
+            <div class="card card-body">
+              <p>Beccati sti link.
+              <br/>Spiegano passo o passo come generate quest archivio zippato da un pc Winzozz.</p>
+              <ol class="text-left">
+                <li><a href="https://linuxhint.com/create-tar-gz-archive-file-windows">Linux Hint - Create TAR GZ From 7-ZIP in Windows</a></li>
+                <li><a href="https://superuser.com/questions/339931/how-do-i-use-7-zip-cli-for-windows-to-create-tar-gz-archives">How do I use 7-Zip CLI for Windows to create .tar.gz archives?</a></li>
+                </ol>
+            </div>
+          </div>
+
+          <form class="mt-2" name="file-upload-form">
             <div class="input-group mb-3">
               <input type="file" class="btn-secondary form-control" id="upload-input">
               <button class="btn btn-primary input-group-text" id="submit-input">Upload</button>

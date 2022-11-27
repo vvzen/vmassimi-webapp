@@ -8,6 +8,8 @@ edition = "2021"
 tokio = { version = "1.21.2", features = ["full"]}
 # Web server framework
 axum = { version = "0.5.16", features = ["multipart"]}
+# Base64
+base64 = '0.13.1'
 # Serialization to JSON
 serde = "1.0.147"
 serde_json = "1.0.86"
@@ -16,6 +18,15 @@ tar = "0.4.38"
 flate2 = "1.0.24"
 # Templating
 askama = "0.11.1"
+# Time
+chrono = "0.4.23"
+# Errors
+anyhow = "1.0.66"
+# Caching
+# https://docs.rs/cached/latest/cached
+cached = '0.40.0'
+# Generic system informations
+sysinfo = '0.26.8'
 
 # When crosscompiling for linux, tell rustc how to find the linker
 [target.x86_64-unknown-linux-gnu]
