@@ -6,4 +6,6 @@ pushd ./services/webapp-rust
 ./build_for_linux.sh
 popd
 
-docker-compose up --build
+#docker-compose build --no-cache
+docker-compose build
+docker-compose up --remove-orphans
