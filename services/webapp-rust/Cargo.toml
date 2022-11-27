@@ -22,6 +22,11 @@ askama = "0.11.1"
 chrono = "0.4.23"
 # Errors
 anyhow = "1.0.66"
+# Caching
+# https://docs.rs/cached/latest/cached
+cached = '0.40.0'
+# Generic system informations
+sysinfo = '0.26.8'
 
 # When crosscompiling for linux, tell rustc how to find the linker
 [target.x86_64-unknown-linux-gnu]

@@ -8,6 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
+use sysinfo::{Disk, DiskExt, System, SystemExt};
 use tar::Archive;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -25,6 +26,23 @@ use serde::{Deserialize, Serialize};
 // -----------------------------------------------------------------------------
 // Data structures
 // -----------------------------------------------------------------------------
+
+// Represent the current status of the API
+#[derive(Debug, Serialize)]
+pub struct StatusData {
+    pub uptime: String,
+    pub total_memory: String,
+    pub used_memory: String,
+    pub disk_info: Vec<DiskData>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiskData {
+    pub name: String,
+    pub available_space: String,
+    pub total_space: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ImageData {
     b64: String,
@@ -188,134 +206,8 @@ fn collect_data_from_directory(path: &PathBuf) -> Vec<InventoryNodeData> {
     nodes_data
 }
 
-pub async fn list_inventory() -> Json<InventoryData> {
-    let latest_version;
-    match get_archive_version().await {
-        Ok(version) => {
-            latest_version = version;
-        }
-        Err(error) => {
-            eprintln!("Failed to get archive version. Error: {}", error.1);
-            let default_data = InventoryData {
-                root: String::from("root"),
-                children: vec![],
-            };
-            return Json(default_data);
-        }
-    }
-
-    // Look on disk and collect information for all files
-    let archive_path = get_archive_path(latest_version);
-    if !archive_path.as_path().exists() {
-        let inventory_data = InventoryData {
-            root: String::from("root"),
-            children: vec![],
-        };
-        return Json(inventory_data);
-    }
-
-    // Find the directory that actually contains the root of the archive
-    // NB: it has a specific name
-    let entry_point_dir = find_entry_point_dir(&archive_path);
-    let mut input_dir = archive_path.clone();
-    match entry_point_dir {
-        Some(r) => {
-            input_dir = r;
-        }
-        None => {}
-    }
-
-    eprintln!("Path to input directory: {}", input_dir.display());
-    if !input_dir.as_path().exists() {
-        let inventory_data = InventoryData {
-            root: String::from("root"),
-            children: vec![],
-        };
-        return Json(inventory_data);
-    }
-
-    let root_children = collect_data_from_directory(&input_dir);
-    let inventory_data = InventoryData {
-        root: String::from("root"),
-        children: root_children,
-    };
-
-    Json(inventory_data)
-}
-
-// TODO: implement Content-length limit via RequestBodyLimitLayer
-// https://docs.rs/axum/latest/axum/extract/struct.ContentLengthLimit.html
-// https://github.com/tokio-rs/axum/blob/0.5.x/examples/multipart-form/src/main.rs
-pub async fn upload_archive(mut multipart: Multipart) -> Result<(), (StatusCode, String)> {
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
-    {
-        // FIXME: watch training on map_err()
-        // FIXME: make this a bit tidier
-
-        // Parse the current upload
-        match field.name() {
-            Some(r) => {
-                let name = r.to_string();
-
-                let data;
-                match field.bytes().await {
-                    Ok(d) => {
-                        data = d;
-                    }
-                    Err(e) => {
-                        return Err((StatusCode::BAD_REQUEST, e.to_string()));
-                    }
-                }
-
-                // Parse content type
-                if name == "content-type" {
-                    let content_type;
-                    match std::str::from_utf8(&data) {
-                        Ok(r) => {
-                            content_type = r;
-                            eprintln!("Content type is {}", content_type);
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to parse field data as UTF8 string: {}", e);
-                            return Err((StatusCode::BAD_REQUEST, e.to_string()));
-                        }
-                    }
-                    continue;
-                }
-                if !name.contains(".tar.gz") {
-                    eprintln!("Skipping file since it's not a .tar.gz archive");
-                    continue;
-                }
-
-                let human_readable_size = bytes_to_human_readable(data.len() as f64);
-                println!("Length of '{}' is {} bytes", &name, &human_readable_size);
-
-                // TODO: Keep track of versions of the same file
-
-                // TODO: Have all of the following happen in a different Thread?
-                let (archive_path, archive_version) = save_archive(data).await?;
-                extract_archive(&archive_path, &archive_version).await?;
-                update_latest_version().await?;
-                clean_up_tmp().await?;
-            }
-            None => {
-                return Err((
-                    StatusCode::EXPECTATION_FAILED,
-                    String::from("No field name in multipart data"),
-                ))
-            }
-        }
-    }
-
-    Ok(())
-}
-
 // -----------------------------------------------------------------------------
 // Various utility functions
-// FIXME: move in a lib.rs module
 // -----------------------------------------------------------------------------
 
 fn bytes_to_human_readable(num_bytes: f64) -> String {
@@ -584,9 +476,85 @@ pub fn get_base64_for_path(path: &Path) -> anyhow::Result<String> {
     Ok(b64_string)
 }
 
+// -----------------------------------------------------------------------------
+// API Routes
+// -----------------------------------------------------------------------------
+
+// TODO: implement authentication
+
+// Return generic informations about the status of the API
+pub async fn status() -> Json<StatusData> {
+    // Gather generic info on the system
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    let total_memory = format!(
+        "{} bytes",
+        bytes_to_human_readable(sys.total_memory() as f64)
+    );
+    let used_memory = format!(
+        "{} bytes",
+        bytes_to_human_readable(sys.used_memory() as f64)
+    );
+
+    let mut disk_info = Vec::new();
+    let mut disks_names_already_added = Vec::new();
+    for disk in sys.disks() {
+        let disk_name = format!("{}", disk.name().to_str().unwrap_or("unknown"));
+        let total_space = bytes_to_human_readable(disk.total_space() as f64);
+        let available_space = bytes_to_human_readable(disk.available_space() as f64);
+
+        if disks_names_already_added.contains(&disk_name) {
+            continue;
+        }
+
+        disk_info.push(DiskData {
+            name: disk_name.clone(),
+            available_space,
+            total_space,
+        });
+        disks_names_already_added.push(disk_name);
+    }
+
+    let mut uptime = String::from("unknown");
+    let start_time_as_str = std::env::var("START_TIME").unwrap_or(String::from(""));
+    eprintln!("Start time: {}", start_time_as_str);
+    let start_time;
+
+    match chrono::DateTime::parse_from_rfc3339(&start_time_as_str) {
+        Ok(r) => {
+            start_time = r;
+
+            // Convert to UTC to do the math
+            let now_utc = chrono::offset::Utc::now();
+            let start_time_utc: chrono::DateTime<Utc> = start_time.with_timezone(&Utc);
+            let elapsed = now_utc - start_time_utc;
+
+            uptime = format!(
+                "{} weeks, {}, days, {} hours, {} minutes, {} seconds",
+                elapsed.num_weeks(),
+                elapsed.num_days(),
+                elapsed.num_hours(),
+                elapsed.num_minutes(),
+                elapsed.num_seconds()
+            );
+        }
+        Err(e) => {
+            eprintln!("Failed to parse datetime from rfc3339: {e}");
+        }
+    }
+
+    Json(StatusData {
+        total_memory,
+        used_memory,
+        disk_info,
+        uptime,
+    })
+}
+
+// From a base64 that represents the path to the image on disk,
+// read the image and return a base64 version of the content of the image.
 pub async fn image_preview(query: Query<ImageQuery>) -> Json<ImageData> {
-    // From a base64 that represents the path to the image on disk,
-    // read the image and return a base64 version of the content of the image.
     let base64_path = &query.path;
 
     let mut image_as_b64 = String::from("");
@@ -618,4 +586,130 @@ pub async fn image_preview(query: Query<ImageQuery>) -> Json<ImageData> {
     }
 
     Json(ImageData { b64: image_as_b64 })
+}
+
+// List the current images we have on disk
+pub async fn list_inventory() -> Json<InventoryData> {
+    let latest_version;
+    match get_archive_version().await {
+        Ok(version) => {
+            latest_version = version;
+        }
+        Err(error) => {
+            eprintln!("Failed to get archive version. Error: {}", error.1);
+            let default_data = InventoryData {
+                root: String::from("root"),
+                children: vec![],
+            };
+            return Json(default_data);
+        }
+    }
+
+    // Look on disk and collect information for all files
+    let archive_path = get_archive_path(latest_version);
+    if !archive_path.as_path().exists() {
+        let inventory_data = InventoryData {
+            root: String::from("root"),
+            children: vec![],
+        };
+        return Json(inventory_data);
+    }
+
+    // Find the directory that actually contains the root of the archive
+    // NB: it has a specific name
+    let entry_point_dir = find_entry_point_dir(&archive_path);
+    let mut input_dir = archive_path.clone();
+    match entry_point_dir {
+        Some(r) => {
+            input_dir = r;
+        }
+        None => {}
+    }
+
+    eprintln!("Path to input directory: {}", input_dir.display());
+    if !input_dir.as_path().exists() {
+        let inventory_data = InventoryData {
+            root: String::from("root"),
+            children: vec![],
+        };
+        return Json(inventory_data);
+    }
+
+    let root_children = collect_data_from_directory(&input_dir);
+    let inventory_data = InventoryData {
+        root: String::from("root"),
+        children: root_children,
+    };
+
+    Json(inventory_data)
+}
+
+// TODO: implement Content-length limit via RequestBodyLimitLayer
+// https://docs.rs/axum/latest/axum/extract/struct.ContentLengthLimit.html
+// https://github.com/tokio-rs/axum/blob/0.5.x/examples/multipart-form/src/main.rs
+pub async fn upload_archive(mut multipart: Multipart) -> Result<(), (StatusCode, String)> {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
+    {
+        // FIXME: watch training on map_err()
+        // FIXME: make this a bit tidier
+
+        // Parse the current upload
+        match field.name() {
+            Some(r) => {
+                let name = r.to_string();
+
+                let data;
+                match field.bytes().await {
+                    Ok(d) => {
+                        data = d;
+                    }
+                    Err(e) => {
+                        return Err((StatusCode::BAD_REQUEST, e.to_string()));
+                    }
+                }
+
+                // Parse content type
+                if name == "content-type" {
+                    let content_type;
+                    match std::str::from_utf8(&data) {
+                        Ok(r) => {
+                            content_type = r;
+                            eprintln!("Content type is {}", content_type);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to parse field data as UTF8 string: {}", e);
+                            return Err((StatusCode::BAD_REQUEST, e.to_string()));
+                        }
+                    }
+                    continue;
+                }
+                if !name.contains(".tar.gz") {
+                    eprintln!("Skipping file since it's not a .tar.gz archive");
+                    continue;
+                }
+
+                let human_readable_size = bytes_to_human_readable(data.len() as f64);
+                println!("Length of '{}' is {} bytes", &name, &human_readable_size);
+
+                // TODO: Keep track of versions of the same file
+
+                // TODO: Have all of the following happen in a different Thread?
+                let (archive_path, archive_version) = save_archive(data).await?;
+                extract_archive(&archive_path, &archive_version).await?;
+                update_latest_version().await?;
+                clean_up_tmp().await?;
+            }
+            None => {
+                return Err((
+                    StatusCode::EXPECTATION_FAILED,
+                    String::from("No field name in multipart data"),
+                ))
+            }
+        }
+    }
+
+    Ok(())
 }

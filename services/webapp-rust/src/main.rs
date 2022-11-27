@@ -13,6 +13,7 @@ use axum::{
 // JSON
 use serde_json::{json, Value};
 // Filesystem operations
+use tokio::runtime::Handle;
 use tokio::{self, io::AsyncReadExt}; // trait needed for write_all()
 
 use crate::core::constants::{APP_VERSION, PORT_NUM};
@@ -23,15 +24,22 @@ mod core;
 #[tokio::main]
 async fn main() {
     //let address = SocketAddr::from(([0, 0, 0, 1], PORT_NUM));
+
+    let metrics = Handle::current().metrics();
     let address = format!("0.0.0.0:{}", PORT_NUM);
-    println!("Axum server running on {}", address);
+    let num_workers = metrics.num_workers();
+    println!(
+        "Axum server running on {} with {} workers",
+        address, num_workers
+    );
 
     // Create the routes
     let app = Router::new()
         .route("/", get(upload))
         .route("/hello/:name", get(hello_name))
-        .route("/api/json", get(hello_json))
         .route("/upload", get(upload))
+        .route("/api/json", get(hello_json))
+        .route("/api/status", get(core::status))
         .route("/api/upload-archive", post(core::upload_archive))
         .route("/api/inventory", get(core::list_inventory))
         .route("/api/image", get(core::image_preview))

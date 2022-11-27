@@ -1,6 +1,7 @@
 # TODO
 
 - [x] [Frontend] Show image when hovering over file node in Inventory
+- [x] [Backend] Add /api/status endpoint
 - [ ] [Frontend/Backend] Add 'Preview' Page to generate a random cat
   - [Frontend] It should have a button that says something like: 'Generate random cat'
   - [Frontend] It should clearly show the current version of the archive being used
