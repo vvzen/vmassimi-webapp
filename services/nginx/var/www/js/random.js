@@ -75,6 +75,7 @@ function getJobInfo(url){
         console.info("Job has completed.");
         img.src = `data:image/png;base64,${data.image}`;
         img.style.display = "block";
+        imageDiv.style.display = "block";
         clearInterval(getJobInfoIntervalID);
       }
     })
