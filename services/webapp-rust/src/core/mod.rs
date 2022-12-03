@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use flate2::read::GzDecoder;
 use std::convert::TryInto;
 use std::fs;
+use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::Stdio;
@@ -62,6 +63,7 @@ pub struct ImageData {
 
 #[derive(Debug, Serialize)]
 pub enum JobStatus {
+    NOT_FOUND,
     STARTED,
     FAILED,
     COMPLETED,
@@ -73,6 +75,7 @@ pub struct JobData {
     endpoint: String,
     job_id: String,
     status: JobStatus,
+    progress: Option<String>,
     image: Option<String>,
 }
 
@@ -722,6 +725,7 @@ pub async fn queue_generation_of_random_image() -> Json<JobData> {
         job_id: String::from(&job_id_str),
         status: JobStatus::STARTED,
         image: None,
+        progress: None,
     };
 
     // In the background, start the generation of the image
@@ -740,7 +744,7 @@ pub async fn queue_generation_of_random_image() -> Json<JobData> {
     Json(job_data)
 }
 
-fn get_job_path(job_id_str: &str) -> anyhow::Result<PathBuf> {
+fn get_job_path(job_id_str: &str) -> anyhow::Result<(PathBuf, PathBuf)> {
     let jobs_root_dir = PathBuf::from(JOBS_ROOT_DIR);
     if !jobs_root_dir.exists() {
         match fs::create_dir(&jobs_root_dir) {
@@ -752,7 +756,11 @@ fn get_job_path(job_id_str: &str) -> anyhow::Result<PathBuf> {
     }
 
     let job_path = PathBuf::from(jobs_root_dir.join(&job_id_str));
-    Ok(job_path)
+
+    let progress_file_name = format!("{}.progress", job_id_str);
+    let job_progress_path = PathBuf::from(jobs_root_dir.join(&progress_file_name));
+
+    Ok((job_path, job_progress_path))
 }
 
 // TODO: Proper error handling and return codes
@@ -760,22 +768,24 @@ pub async fn get_job(query: Query<JobQuery>) -> Json<JobData> {
     let job_id = &query.job_id;
     eprintln!("Checking for job_id={}", job_id);
 
-    // TODO: Maybe we can save a job file with the .png extension,
-    // So that we can check if /path/to/job_id.png exists, and return it,
-    // and if it doesn't, then /path/to/job_id will contain the progress %
+    // Save a job file with the .progress extension,
+    // We can check if /path/to/job_id exists, and return it,
+    // and if it doesn't, then /path/to/job_id.progress will contain the progress %
 
     let mut job_data = JobData {
         endpoint: String::from("api/jobs"),
         job_id: String::from(job_id),
-        status: JobStatus::UNKNOWN,
+        status: JobStatus::NOT_FOUND,
+        progress: None,
         image: None,
     };
 
     // TODO: Distinguish between failed jobs and jobs that don't exist at all
-    let failed_data = JobData {
+    let default_data = JobData {
         endpoint: String::from("api/jobs"),
         job_id: String::from(job_id),
-        status: JobStatus::FAILED,
+        status: JobStatus::NOT_FOUND,
+        progress: None,
         image: None,
     };
 
@@ -783,50 +793,81 @@ pub async fn get_job(query: Query<JobQuery>) -> Json<JobData> {
     // If so, retrieve the related image
     // If not, give a meaningful reply to the caller
     let job_path;
+    let job_progress_path;
+
     match get_job_path(job_id) {
         Ok(r) => {
-            job_path = r;
+            (job_path, job_progress_path) = r;
         }
         Err(e) => {
             eprintln!("{e}");
-            return Json(failed_data);
+            return Json(default_data);
         }
     }
 
     if !job_path.exists() {
-        eprintln!("{} doesn't exist.", job_path.display());
-        return Json(failed_data);
+        eprintln!(
+            "{} doesn't exist, checking if it's in progress..",
+            job_path.display()
+        );
+    }
+
+    if !job_progress_path.exists() {
+        eprintln!(
+            "{} doesn't exist and is not in progress.",
+            job_path.display()
+        );
+        return Json(default_data);
     }
 
     // If file size is small, it's definitely not a rendered image
     let file_size = &job_path.metadata().unwrap().len();
     eprintln!("file_size: {}", file_size);
     if file_size < &20 {
-        // TODO: Extract the progress
-        job_data.status = JobStatus::STARTED;
-        match fs::read_to_string(&job_path) {
-            Ok(content) => {
-                eprintln!("Progress: {}", content);
-                return Json(job_data);
+        // Extract the progress
+        let progress_file;
+
+        match fs::File::open(&job_progress_path) {
+            Ok(f) => {
+                progress_file = f;
             }
             Err(e) => {
-                eprintln!("Error while reading image content: {e}");
-                return Json(failed_data);
+                eprintln!("{e}");
+                return Json(default_data);
+            }
+        }
+
+        let lines: Vec<String> = io::BufReader::new(progress_file)
+            .lines()
+            .map(|s| s.unwrap().to_owned())
+            .collect();
+
+        let num_lines = lines.len();
+        match lines.get(num_lines - 1) {
+            Some(l) => {
+                eprintln!("Job progress: {}", l);
+                job_data.progress = Some(String::from(l));
+                job_data.status = JobStatus::STARTED;
+                return Json(job_data);
+            }
+            None => {
+                return Json(default_data);
             }
         }
     }
 
-    // Image has finished rendering, ideally
+    // If we are here, the image has finished rendering, ideally
     eprintln!("Getting base64 from image..");
     match get_base64_for_path(&job_path) {
         Ok(base64_str) => {
             eprintln!("Image has finished rendering");
             job_data.image = Some(base64_str);
+            job_data.progress = Some(String::from("completed"));
             job_data.status = JobStatus::COMPLETED;
         }
         Err(e) => {
             eprintln!("Error while reading image content: {e}");
-            return Json(failed_data);
+            return Json(default_data);
         }
     }
 
@@ -835,7 +876,7 @@ pub async fn get_job(query: Query<JobQuery>) -> Json<JobData> {
 
 pub async fn generate_random_image(job_id_str: &str) -> anyhow::Result<()> {
     // Write the job file on disk so that we know this request has started
-    let job_path = get_job_path(job_id_str)?;
+    let (job_path, job_progress_path) = get_job_path(job_id_str)?;
 
     // Update progress
     match fs::write(&job_path, "progress: 0%") {
@@ -894,15 +935,20 @@ pub async fn generate_random_image(job_id_str: &str) -> anyhow::Result<()> {
         .try_into()
         .expect("Failed to convert stdout to Stdio");
 
+    let stderr_file = fs::File::create(&job_progress_path).unwrap();
+    let render_stderr = Stdio::from(stderr_file);
+
+    eprintln!("Progress will be saved to {}", job_progress_path.display());
+
     let image_name = format!("{}", job_id_str);
     let render = tokio::process::Command::new("/app/image-composite-linux")
         .args(["--image-name", &image_name])
         .stdin(render_stdin)
         .stdout(Stdio::piped())
+        .stderr(render_stderr)
         .spawn()
         .expect("Failed to spawn image-composite");
 
-    // TODO: handle STDERR too
     let (generate_result, render_output) = tokio::join!(generate.wait(), render.wait_with_output());
 
     let generation_has_succeeded = generate_result.unwrap().success();

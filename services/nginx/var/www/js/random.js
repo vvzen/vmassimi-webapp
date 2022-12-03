@@ -1,5 +1,14 @@
+const JOB_RETRIEVAL_INTERVAL = 5 * 1000; // ms
+
+// Generate
 const generateButton = document.getElementById("generate-preview-button");
 generateButton.addEventListener("click", onGeneratePreview);
+
+// Report progress
+const progressDiv = document.getElementById("job-progress-info");
+const progressBar = document.getElementById("job-progress-bar");
+const progressText = document.getElementById("job-progress-report");
+const progressRegex = /PROGRESS: (\d{2})%;([ :.\w\d]*)/;
 
 const imageDiv = document.getElementById("generated-image-container");
 imageDiv.style.display = "none";
@@ -31,7 +40,10 @@ function onGeneratePreview(){
         console.log("job_url:", job_url);
 
         // Keep trying until we get a positive response, or we run out of time/attempts
-        getJobInfoIntervalID = setInterval(getJobInfo, 10 * 1000, job_url);
+        getJobInfoIntervalID = setInterval(getJobInfo, JOB_RETRIEVAL_INTERVAL, job_url);
+        progressDiv.style.visibility = "visible";
+        progressText.innerText = "Just started!";
+        generateButton.style.visibility = "hidden"
 
       }
       else {
@@ -49,7 +61,7 @@ function getJobInfo(url){
 
   console.log("getJobInfo for url:", url);
 
-  if (numAttempts > 20){
+  if (numAttempts > 50){
     // TODO: Show the error to the user
     console.error("Went over the max number of attempts to retrieve job info.");
     clearInterval(getJobInfoIntervalID);
@@ -67,15 +79,38 @@ function getJobInfo(url){
       if (data.status == "FAILED"){
         console.error("Job has failed.");
         clearInterval(getJobInfoIntervalID);
+        progressDiv.style.visibility = "hidden";
       }
       else if (data.status == "STARTED"){
-        console.info("Job is in progress.");
+
+        console.log("Job is in progress.");
+        console.log(data.progress);
+
+        // Extract the percentage
+        let progressString = data.progress;
+        progressDiv.style.visibility = "visible";
+
+        let results = progressRegex.exec(data.progress);
+        let progress = results[1];
+        let info = results[2];
+
+        console.log("Results:", results);
+        console.log("progress:", progress);
+        console.log("info:", info);
+
+        progressBar.ariaValueNow = progress;
+        progressBar.style.width = `${progress}%`;
+        progressText.innerText = `${info}`;
+
       }
       else if (data.status == "COMPLETED"){
-        console.info("Job has completed.");
+        console.log("Job has completed.");
         img.src = `data:image/png;base64,${data.image}`;
         img.style.display = "block";
         imageDiv.style.display = "block";
+        generateButton.style.visibility = "visible"
+        progressDiv.style.visibility = "hidden";
+
         clearInterval(getJobInfoIntervalID);
       }
     })
