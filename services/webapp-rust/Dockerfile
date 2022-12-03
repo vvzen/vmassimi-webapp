@@ -17,6 +17,7 @@ ENV TZ CET
 
 #ENV PATH="${HOME}/.cargo/bin:${PATH}"
 
-COPY webapp-rust-linux webapp-rust-linux
+COPY data/image-composite-linux image-composite-linux
+COPY data/webapp-rust-linux webapp-rust-linux
 
 CMD ["/bin/sh", "/app/scripts/run_server.sh"]

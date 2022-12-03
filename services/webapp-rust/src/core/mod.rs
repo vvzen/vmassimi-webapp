@@ -4,28 +4,41 @@ use axum::{extract::Multipart, extract::Query, http::StatusCode, response::Json}
 // Filesystem operations
 use chrono::{DateTime, Utc};
 use flate2::read::GzDecoder;
+use std::convert::TryInto;
 use std::fs;
+use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::process::Stdio;
 use std::time::SystemTime;
 use sysinfo::{Disk, DiskExt, System, SystemExt};
 use tar::Archive;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
+// JSON
+use serde::{Deserialize, Serialize};
+
+use uuid::Uuid;
+
+// Errors
 use anyhow;
 
 pub mod constants;
 use crate::core::constants::{
-    ARCHIVES_ROOT_DIR, ARCHIVES_TMP_DIR, ENTRY_POINT_DIR_NAME, VERSIONS_PATH, ZFILL_PADDING,
+    ARCHIVES_ROOT_DIR, ARCHIVES_TMP_DIR, ENTRY_POINT_DIR_NAME, JOBS_ROOT_DIR, VERSIONS_PATH,
+    ZFILL_PADDING,
 };
-
-// JSON
-use serde::{Deserialize, Serialize};
 
 // -----------------------------------------------------------------------------
 // Data structures
 // -----------------------------------------------------------------------------
+
+pub struct Page {
+    pub active: bool,
+    pub name: String,
+    pub url: String,
+}
 
 // Represent the current status of the API
 #[derive(Debug, Serialize)]
@@ -46,6 +59,29 @@ pub struct DiskData {
 #[derive(Debug, Serialize)]
 pub struct ImageData {
     b64: String,
+}
+
+#[derive(Debug, Serialize)]
+pub enum JobStatus {
+    NOT_FOUND,
+    STARTED,
+    FAILED,
+    COMPLETED,
+    UNKNOWN,
+}
+
+#[derive(Debug, Serialize)]
+pub struct JobData {
+    endpoint: String,
+    job_id: String,
+    status: JobStatus,
+    progress: Option<String>,
+    image: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct JobQuery {
+    pub job_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -232,7 +268,7 @@ fn bytes_to_human_readable(num_bytes: f64) -> String {
     result
 }
 
-async fn save_archive(data: axum::body::Bytes) -> Result<(PathBuf, String), (StatusCode, String)> {
+async fn save_archive(data: axum::body::Bytes) -> anyhow::Result<(PathBuf, String)> {
     // Ask the DB which version of the file this is
     let last_version = get_archive_version().await?;
 
@@ -243,12 +279,12 @@ async fn save_archive(data: axum::body::Bytes) -> Result<(PathBuf, String), (Sta
     match tokio::fs::create_dir_all(base_dir).await {
         Ok(_) => {}
         Err(e) => {
-            eprintln!(
+            let message = format!(
                 "Failed to create dir: {}. Error: {}",
                 save_path.display(),
                 e
             );
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+            anyhow::bail!(message);
         }
     }
 
@@ -265,8 +301,8 @@ async fn save_archive(data: axum::body::Bytes) -> Result<(PathBuf, String), (Sta
             file = f;
         }
         Err(e) => {
-            eprintln!("Failed to create file to disk. Error: {}", e);
-            return Err((StatusCode::BAD_REQUEST, e.to_string()));
+            let message = format!("Failed to create file to disk. Error: {}", e);
+            anyhow::bail!(message);
         }
     }
     match file.write_all(&data).await {
@@ -274,8 +310,8 @@ async fn save_archive(data: axum::body::Bytes) -> Result<(PathBuf, String), (Sta
             eprintln!("{} written to disk!", save_path.display());
         }
         Err(e) => {
-            eprintln!("Failed writing file to disk. Error: {}", e);
-            return Err((StatusCode::BAD_REQUEST, e.to_string()));
+            let message = format!("Failed writing file to disk. Error: {}", e);
+            anyhow::bail!(message);
         }
     }
     match current_time.elapsed() {
@@ -289,7 +325,7 @@ async fn save_archive(data: axum::body::Bytes) -> Result<(PathBuf, String), (Sta
     Ok((save_path, version_padded))
 }
 
-async fn get_archive_version() -> Result<i32, (StatusCode, String)> {
+pub async fn get_archive_version() -> anyhow::Result<i32> {
     // TODO: Have a proper DB, for now a JSON file on disk is enough
     let versions_file_path = Path::new(&VERSIONS_PATH);
 
@@ -329,12 +365,12 @@ async fn get_archive_version() -> Result<i32, (StatusCode, String)> {
             file_contents = f;
         }
         Err(e) => {
-            eprintln!(
+            let message = format!(
                 "Failed to read {}, error: {}",
                 versions_file_path.display(),
                 e
             );
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+            anyhow::bail!(message);
         }
     }
 
@@ -345,13 +381,13 @@ async fn get_archive_version() -> Result<i32, (StatusCode, String)> {
             return Ok(data.last_version);
         }
         Err(e) => {
-            eprintln!("Failed to deserialize {:?}, error: {}", file_contents, e);
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+            let message = format!("Failed to deserialize {:?}, error: {}", file_contents, e);
+            anyhow::bail!(message);
         }
     }
 }
 
-async fn extract_archive(archive_path: &Path, version: &str) -> Result<(), (StatusCode, String)> {
+async fn extract_archive(archive_path: &Path, version: &str) -> anyhow::Result<()> {
     eprintln!("Started decompressing and untaring of archive");
     let tar;
 
@@ -361,8 +397,8 @@ async fn extract_archive(archive_path: &Path, version: &str) -> Result<(), (Stat
             tar = GzDecoder::new(tar_gz);
         }
         Err(e) => {
-            eprintln!("Failed to open tar archive: {}", e);
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+            let message = format!("Failed to open tar archive: {}", e);
+            anyhow::bail!(message);
         }
     }
 
@@ -376,8 +412,8 @@ async fn extract_archive(archive_path: &Path, version: &str) -> Result<(), (Stat
             );
         }
         Err(e) => {
-            eprintln!("Failed to extract tar archive: {}", e);
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+            let message = format!("Failed to extract tar archive: {}", e);
+            anyhow::bail!(message);
         }
     }
 
@@ -388,12 +424,20 @@ async fn extract_archive(archive_path: &Path, version: &str) -> Result<(), (Stat
         .args([&extraction_path])
         .output()
         .unwrap();
-    eprintln!("Output of sanitization process: {:?}", output.stdout);
+    eprintln!("Exit code of sanitization process: {:?}", output.status);
+    eprintln!(
+        "STDOUT of sanitization process: {:?}",
+        std::str::from_utf8(&output.stdout)
+    );
+    eprintln!(
+        "STERR of sanitization process: {:?}",
+        std::str::from_utf8(&output.stderr)
+    );
 
     Ok(())
 }
 
-async fn update_latest_version() -> Result<(), (StatusCode, String)> {
+async fn update_latest_version() -> anyhow::Result<()> {
     eprintln!("Updating versions file to correct the last version..");
     let last_version = get_archive_version().await?;
     let new_version = last_version + 1;
@@ -413,8 +457,8 @@ async fn update_latest_version() -> Result<(), (StatusCode, String)> {
             serialized_data = r;
         }
         Err(e) => {
-            eprintln!("Failed to serialize {:#?}. Error: {}", new_data, e);
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+            let message = format!("Failed to serialize {:#?}. Error: {}", new_data, e);
+            anyhow::bail!(message);
         }
     }
 
@@ -423,23 +467,23 @@ async fn update_latest_version() -> Result<(), (StatusCode, String)> {
             eprintln!("Last version is now {}", new_version);
         }
         Err(e) => {
-            eprintln!("Failed to create JSON file. Error: {}", e);
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+            let message = format!("Failed to create JSON file. Error: {}", e);
+            anyhow::bail!(message);
         }
     }
 
     Ok(())
 }
 
-async fn clean_up_tmp() -> Result<(), (StatusCode, String)> {
+async fn clean_up_tmp() -> anyhow::Result<()> {
     match std::fs::remove_dir_all(ARCHIVES_TMP_DIR) {
         Ok(_) => {
             eprintln!("Successfully cleaned up tmp directory.");
             Ok(())
         }
         Err(e) => {
-            eprintln!("Failed to clean up tmp directory. Error: {}", e);
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+            let message = format!("Failed to clean up tmp directory. Error: {}", e);
+            anyhow::bail!(message);
         }
     }
 }
@@ -474,6 +518,28 @@ pub fn get_base64_for_path(path: &Path) -> anyhow::Result<String> {
     }
 
     Ok(b64_string)
+}
+
+pub fn get_pages_lists_for_current_page(active_page: &str) -> Vec<Page> {
+    // Generate urls, titles and understand whether a page should be marked as "active"
+    // This information is needed to inform the fixed navbar
+
+    // TODO: use an Enum
+    let all_pages = vec!["Upload", "Inventory", "Random"];
+    let mut pages = vec![];
+
+    for page_name in all_pages {
+        let is_active = page_name == active_page;
+        let page_url = String::from(format!("/app/{}", page_name.to_lowercase()));
+        let current_page = Page {
+            name: String::from(page_name),
+            active: is_active,
+            url: page_url,
+        };
+        pages.push(current_page);
+    }
+
+    pages
 }
 
 // -----------------------------------------------------------------------------
@@ -557,6 +623,8 @@ pub async fn status() -> Json<StatusData> {
 pub async fn image_preview(query: Query<ImageQuery>) -> Json<ImageData> {
     let base64_path = &query.path;
 
+    // TODO: implement a mechanism to understand whether a job has been queued or not
+
     let mut image_as_b64 = String::from("");
 
     let image_path;
@@ -596,7 +664,7 @@ pub async fn list_inventory() -> Json<InventoryData> {
             latest_version = version;
         }
         Err(error) => {
-            eprintln!("Failed to get archive version. Error: {}", error.1);
+            eprintln!("Failed to get archive version. Error: {}", error);
             let default_data = InventoryData {
                 root: String::from("root"),
                 children: vec![],
@@ -644,6 +712,297 @@ pub async fn list_inventory() -> Json<InventoryData> {
     Json(inventory_data)
 }
 
+pub async fn queue_generation_of_random_image() -> Json<JobData> {
+    // Generate a random ID
+    let job_id = Uuid::new_v4();
+    let job_id_str = job_id.to_string();
+
+    eprintln!("Generated new Job, id: {}", job_id_str);
+    let url = String::from("api/jobs");
+
+    let job_data = JobData {
+        endpoint: url,
+        job_id: String::from(&job_id_str),
+        status: JobStatus::STARTED,
+        image: None,
+        progress: None,
+    };
+
+    // In the background, start the generation of the image
+    tokio::spawn(async move {
+        eprintln!("Started image processing..");
+        match generate_random_image(&job_id_str).await {
+            Ok(_) => {
+                eprintln!("Finished image processing.");
+            }
+            Err(e) => {
+                eprintln!("Failed to render image. {}", e);
+            }
+        }
+    });
+
+    Json(job_data)
+}
+
+fn get_job_path(job_id_str: &str) -> anyhow::Result<(PathBuf, PathBuf)> {
+    let jobs_root_dir = PathBuf::from(JOBS_ROOT_DIR);
+    if !jobs_root_dir.exists() {
+        match fs::create_dir(&jobs_root_dir) {
+            Ok(_) => {}
+            Err(e) => {
+                anyhow::bail!(e);
+            }
+        }
+    }
+
+    let job_path = PathBuf::from(jobs_root_dir.join(&job_id_str));
+
+    let progress_file_name = format!("{}.progress", job_id_str);
+    let job_progress_path = PathBuf::from(jobs_root_dir.join(&progress_file_name));
+
+    Ok((job_path, job_progress_path))
+}
+
+// TODO: Proper error handling and return codes
+pub async fn get_job(query: Query<JobQuery>) -> Json<JobData> {
+    let job_id = &query.job_id;
+    eprintln!("Checking for job_id={}", job_id);
+
+    // Save a job file with the .progress extension,
+    // We can check if /path/to/job_id exists, and return it,
+    // and if it doesn't, then /path/to/job_id.progress will contain the progress %
+
+    let mut job_data = JobData {
+        endpoint: String::from("api/jobs"),
+        job_id: String::from(job_id),
+        status: JobStatus::NOT_FOUND,
+        progress: None,
+        image: None,
+    };
+
+    // TODO: Distinguish between failed jobs and jobs that don't exist at all
+    let default_data = JobData {
+        endpoint: String::from("api/jobs"),
+        job_id: String::from(job_id),
+        status: JobStatus::NOT_FOUND,
+        progress: None,
+        image: None,
+    };
+
+    // Check if the job has finished
+    // If so, retrieve the related image
+    // If not, give a meaningful reply to the caller
+    let job_path;
+    let job_progress_path;
+
+    match get_job_path(job_id) {
+        Ok(r) => {
+            (job_path, job_progress_path) = r;
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            return Json(default_data);
+        }
+    }
+
+    if !job_path.exists() {
+        eprintln!(
+            "{} doesn't exist, checking if it's in progress..",
+            job_path.display()
+        );
+    }
+
+    if !job_progress_path.exists() {
+        eprintln!(
+            "{} doesn't exist and is not in progress.",
+            job_path.display()
+        );
+        return Json(default_data);
+    }
+
+    // If file size is small, it's definitely not a rendered image
+    let file_size = &job_path.metadata().unwrap().len();
+    eprintln!("file_size: {}", file_size);
+    if file_size < &20 {
+        // Extract the progress
+        let progress_file;
+
+        match fs::File::open(&job_progress_path) {
+            Ok(f) => {
+                progress_file = f;
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                return Json(default_data);
+            }
+        }
+
+        let lines: Vec<String> = io::BufReader::new(progress_file)
+            .lines()
+            .map(|s| s.unwrap().to_owned())
+            .collect();
+
+        let num_lines = lines.len();
+        match lines.get(num_lines - 1) {
+            Some(l) => {
+                eprintln!("Job progress: {}", l);
+                job_data.progress = Some(String::from(l));
+                job_data.status = JobStatus::STARTED;
+                return Json(job_data);
+            }
+            None => {
+                return Json(default_data);
+            }
+        }
+    }
+
+    // If we are here, the image has finished rendering, ideally
+    eprintln!("Getting base64 from image..");
+    match get_base64_for_path(&job_path) {
+        Ok(base64_str) => {
+            eprintln!("Image has finished rendering");
+            job_data.image = Some(base64_str);
+            job_data.progress = Some(String::from("completed"));
+            job_data.status = JobStatus::COMPLETED;
+        }
+        Err(e) => {
+            eprintln!("Error while reading image content: {e}");
+            return Json(default_data);
+        }
+    }
+
+    Json(job_data)
+}
+
+pub async fn generate_random_image(job_id_str: &str) -> anyhow::Result<()> {
+    // Write the job file on disk so that we know this request has started
+    let (job_path, job_progress_path) = get_job_path(job_id_str)?;
+
+    // Update progress
+    match fs::write(&job_path, "progress: 0%") {
+        Ok(_) => {}
+        Err(e) => {
+            let message = format!(
+                "Failed to write jobs file ({}) on disk. {}",
+                job_path.display(),
+                e
+            );
+            anyhow::bail!(message);
+        }
+    }
+
+    // First, generate a random recipe
+    let latest_archive_version = get_archive_version().await?;
+
+    // Look on disk and collect information for all files
+    let archive_path = get_archive_path(latest_archive_version);
+    let entry_point_path = archive_path
+        .join("sphynx_program")
+        .join(ENTRY_POINT_DIR_NAME);
+
+    // TODO: Check exit code (to catch python tracebacks)
+
+    // $ generate_permutation.py /app/data/archives/002 > my_recipe_file
+    // $ cat my_recipe_file | ./image-composite/target/release/image-composite --image-name my_name
+    eprintln!(
+        "Generating permutation starting from {}",
+        entry_point_path.display()
+    );
+
+    let mut generate = tokio::process::Command::new("/app/scripts/generate_permutation.py")
+        .args([&entry_point_path])
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn generate_permutation.py");
+
+    // Update progress
+    match fs::write(&job_path, "progress: 20%") {
+        Ok(_) => {}
+        Err(e) => {
+            let message = format!(
+                "Failed to write jobs file ({}) on disk : {}",
+                job_path.display(),
+                e
+            );
+            anyhow::bail!(message);
+        }
+    }
+
+    let render_stdin: Stdio = generate
+        .stdout
+        .take()
+        .unwrap()
+        .try_into()
+        .expect("Failed to convert stdout to Stdio");
+
+    let stderr_file = fs::File::create(&job_progress_path).unwrap();
+    let render_stderr = Stdio::from(stderr_file);
+
+    eprintln!("Progress will be saved to {}", job_progress_path.display());
+
+    let image_name = format!("{}", job_id_str);
+    let render = tokio::process::Command::new("/app/image-composite-linux")
+        .args(["--image-name", &image_name])
+        .stdin(render_stdin)
+        .stdout(Stdio::piped())
+        .stderr(render_stderr)
+        .spawn()
+        .expect("Failed to spawn image-composite");
+
+    let (generate_result, render_output) = tokio::join!(generate.wait(), render.wait_with_output());
+
+    let generation_has_succeeded = generate_result.unwrap().success();
+    eprintln!("Generation has succeded? {}", generation_has_succeeded);
+
+    if !generation_has_succeeded {
+        match fs::remove_file(&job_path) {
+            Ok(_) => {}
+            Err(e) => {
+                let message = format!(
+                    "Failed to remove jobs file ({}) on disk. {}",
+                    job_path.display(),
+                    e
+                );
+                anyhow::bail!(message);
+            }
+        }
+        let message = format!("Image generation has failed.");
+        anyhow::bail!(message);
+    }
+
+    let render_stdout = &render_output.unwrap().stdout;
+    let image_path_str = std::str::from_utf8(render_stdout)
+        .unwrap_or("")
+        .strip_suffix("\n")
+        .unwrap_or("");
+
+    eprintln!("image_path_str: {}", image_path_str);
+
+    let image_path = PathBuf::from(image_path_str);
+
+    if image_path_str.is_empty() {
+        anyhow::bail!("No STDOUT generated from render process");
+    }
+    if !image_path.exists() {
+        let message = format!("Image at path {} doesn't exist.", image_path.display());
+        anyhow::bail!(message);
+    }
+
+    match fs::rename(&image_path, &job_path) {
+        Ok(()) => {}
+        Err(e) => {
+            let message = format!(
+                "Failed to move image from {} to {}. {}",
+                image_path.display(),
+                job_path.display(),
+                e
+            );
+            anyhow::bail!(message);
+        }
+    }
+
+    Ok(())
+}
 // TODO: implement Content-length limit via RequestBodyLimitLayer
 // https://docs.rs/axum/latest/axum/extract/struct.ContentLengthLimit.html
 // https://github.com/tokio-rs/axum/blob/0.5.x/examples/multipart-form/src/main.rs
@@ -696,11 +1055,31 @@ pub async fn upload_archive(mut multipart: Multipart) -> Result<(), (StatusCode,
 
                 // TODO: Keep track of versions of the same file
 
-                // TODO: Have all of the following happen in a different Thread?
-                let (archive_path, archive_version) = save_archive(data).await?;
-                extract_archive(&archive_path, &archive_version).await?;
-                update_latest_version().await?;
-                clean_up_tmp().await?;
+                // Spawn a different thread to do all of the data cleanup
+                // FIXME: tidy up error handling
+                tokio::spawn(async move {
+                    let (archive_path, archive_version) =
+                        save_archive(data).await.expect("Failed to save archive.");
+
+                    match extract_archive(&archive_path, &archive_version).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("Failed to extract archive. {}", e);
+                        }
+                    }
+                    match update_latest_version().await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("Failed to update latest version. {}", e);
+                        }
+                    }
+                    match clean_up_tmp().await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("Failed to clean up tmp dir. {}", e);
+                        }
+                    }
+                });
             }
             None => {
                 return Err((
