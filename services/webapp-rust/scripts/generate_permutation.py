@@ -7,7 +7,7 @@ import random
 import hashlib
 
 OVERLAY_REGEX = re.compile(r"^\d{2}")
-STREAM_REGEX = re.compile(r"(?:^(?:Body_Skin_)|^(?:\w+_\d+_))([&]*[A-Za-z0-9&_]*)\.png")
+STREAM_REGEX = re.compile(r"(?:^(?:body_skin_)|^(?:\w+_\d+_))([&]*[A-Za-z0-9&_]*)\.png")
 CURRENT_STREAM = None
 SKINS_DIR_NAME = "02_body_skins"
 TREES_FILE_NAME = "trees.txt"
@@ -157,8 +157,9 @@ def traverse(tree, branch, root_dir):
     final_leaf = pick_leaf(potential_leaves)
 
     # Pick the skin / stream
-    if branch[-1] == SKINS_DIR_NAME:
+    if branch[-1].lower() == SKINS_DIR_NAME:
         CURRENT_STREAM = get_stream(final_leaf)
+        sys.stderr.write(f"Chosen stream is {CURRENT_STREAM}\n")
 
         if IS_DEBUG:
             sys.stderr.write(f"\tCurrent stream: {CURRENT_STREAM}\n")
