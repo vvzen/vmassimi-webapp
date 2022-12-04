@@ -15,6 +15,7 @@ imageDiv.style.display = "none";
 const img = document.getElementById("generated-image");
 img.style.maxWidth = "512px";
 
+// Make this into a hashmap<jobId: string, numAttempts: u64>
 let numAttempts = 0;
 let getJobInfoIntervalID;
 
@@ -112,6 +113,7 @@ function getJobInfo(url){
         progressDiv.style.visibility = "hidden";
 
         clearInterval(getJobInfoIntervalID);
+        numAttempts = 0;
       }
     })
     .catch((error) => {
