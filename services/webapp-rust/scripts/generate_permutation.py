@@ -5,50 +5,112 @@ import sys
 import bisect
 import random
 import hashlib
+from typing import Any
 
 OVERLAY_REGEX = re.compile(r"^\d{2}")
-STREAM_REGEX = re.compile(r"(?:^(?:body_skin_)|^(?:\w+_\d+_))([&]*[A-Za-z0-9&_]*)\.png")
-CURRENT_STREAM = None
+SKIN_STREAM_REGEX = re.compile(r"(?:^(?:body_skin_)|^(?:\w+_\d+_))([&]*[A-Za-z0-9&_]*)\.png")
+SKIN_STREAM = None
 SKINS_DIR_NAME = "02_body_skins"
 TREES_FILE_NAME = "trees.txt"
-IS_DEBUG = os.getenv("DEBUG", False)
+
+MOUTH_06_HAS_BEEN_CHOSEN = False
+MOUTH_06_HAS_GADGETS = False
+MOUTH_06_REGEX = re.compile(r"mouth_\d*6")
+MOUTH_06_HAS_GADGET_REGEX = re.compile(r"mouth_\d*6_gadget")
+
+DEBUG_LEVEL = int(os.getenv("DEBUG_LEVEL", 0))
 
 # NB: As usual UNIX practice, stderr is used for logging/errors
 # stdout is used to generate the output we're interesting in
 # this makes the piping easy
 
+NAMES_PROBABILITIES = {
+    "common": 75.0 / 100.0,
+    "uncommon": 15.0 / 100.0,
+    "epic": 7.0 / 100.0,
+    "legendary": 3.0 / 100.0,
+}
 
-def get_probability(name):
+
+def get_probability(name: str) -> float:
+    """Given a name in input, print back the probability associated with that name being chosen
+
+    :param name: name
+    :type name: str
+
+    :return: probability of that name being chosen
+    :rtype: float
+    """
 
     name = name.lower()
-
     tokens = name.split("_")
+
     for token in tokens:
-        if token == "uncommon":
-            return 15.0 / 100.0
-        elif token == "epic":
-            return 7.0 / 100.0
-        elif token == "legendary":
-            return 3.0 / 100.0
+        probability = NAMES_PROBABILITIES.get(token, None)
+        if probability:
+            return probability
 
-    # Common
-    return 75.0 / 100.0
+    return NAMES_PROBABILITIES["common"]
 
 
-def pick_leaf(leaves):
+def pick_leaf(leaves: list) -> Any:
+    """Choose a random element from the given ones
+
+    :param leaves: list to chose elements from
+    :type leaves: list[str]
+
+    :raises RuntimeError: if no variants were provided
+
+    :return: an element chosen at random
+    :rtype: str
+    """
+
     if not leaves:
-        raise RuntimeError("Cannot pick a variant - "
-                           "no variants were provided!")
+        raise RuntimeError("Cannot pick a leaf - "
+                           "no leafs were provided!")
+
+    # Special Case: mouths 06 can only go with hands 06
+    if MOUTH_06_HAS_BEEN_CHOSEN:
+        # If we are choosing hands 06, then we need to apply
+        # some special logic. Otherwise we continue as usual
+        we_are_choosing_hands = [leaf for leaf in leaves if 'hand' in leaf]
+        if we_are_choosing_hands:
+            return pick_hand_06_leaf(leaves)
 
     index = random.randint(0, len(leaves)-1)
     return leaves[index]
 
 
-def pick_variant(variants):
+def pick_hand_06_leaf(leaves: list):
 
-    if not variants:
-        raise RuntimeError("Cannot pick a variant - "
-                           "no variants were provided!")
+    if DEBUG_LEVEL >= 1:
+        sys.stderr.write("\tPicking hand leaf constrained by mouth 06 choice\n")
+
+    new_leaves = []
+    for leaf in leaves:
+
+        # If the mouth 06 already has gadgets,
+        # we don't want to pick any more gadgets here
+        if MOUTH_06_HAS_GADGETS and leaf.startswith('gadget'):
+            if DEBUG_LEVEL >= 1:
+                sys.stderr.write(f"\tSkipping hand leaf {leaf} since it has gadgets\n")
+            continue
+
+        if '6' in leaf:
+            new_leaves.append(leaf)
+
+    index = random.randint(0, len(leaves)-1)
+    return leaves[index]
+
+
+def should_use_weighted_approach(variants):
+    return len([v for v in variants if 'uncommon' in v]) != 0
+
+
+def pick_variant_weighted_approach(variants):
+
+    if DEBUG_LEVEL >= 1:
+        sys.stderr.write("\tPicking variant based on weighted approach\n")
 
     probabilities = []
 
@@ -57,16 +119,63 @@ def pick_variant(variants):
 
     probabilities = sorted(probabilities, key=lambda e: e[1])
 
-    dice = random.randrange(0.0, 100.0) / 100.0
+    # Throw a dice with a 100
+    dice = random.randrange(0.0, 100.0) // 100.0
+
     for variant_name, variant_prob in probabilities:
         if dice <= variant_prob:
             return variant_name
-
     return probabilities[-1][0]
 
 
-def get_stream(file_name):
-    match = STREAM_REGEX.match(file_name)
+def pick_variant_random_approach(variants):
+
+    if DEBUG_LEVEL >= 1:
+        sys.stderr.write("\tPicking variant based on random approach\n")
+
+    num_variants = len(variants)
+    if num_variants == 1:
+        return variants[0]
+
+    if num_variants == 0:
+        raise RuntimeError("Cannot pick a variant - "
+                           "no variants were provided!")
+
+    assert num_variants-1 > 0
+
+    index = random.randint(0, num_variants-1)
+    return variants[index]
+
+
+def pick_variant(variants):
+
+    global MOUTH_06_HAS_BEEN_CHOSEN
+
+    if DEBUG_LEVEL >= 1:
+        sys.stderr.write(f"\tPicking variant among {variants}\n")
+
+    if not variants:
+        raise RuntimeError("Cannot pick a variant - "
+                           "no variants were provided!")
+
+    # Legendary/Uncommon items: compute the weighted probability of a variant
+    # based on its name, then pick it
+    if should_use_weighted_approach(variants):
+        return pick_variant_weighted_approach(variants)
+
+    # Mouth 06 case
+    # If we are choosing hands, and mouth 06 has been chosen, we can only use hands 06
+    if MOUTH_06_HAS_BEEN_CHOSEN:
+        we_are_choosing_hands = [v for v in variants if 'hand' in v]
+        if we_are_choosing_hands:
+            variants = [v2 for v2 in variants if '6' in v2]
+
+    # Normal case: equal probabilities (just chose one at random)
+    return pick_variant_random_approach(variants)
+
+
+def get_skin_stream(file_name: str) -> str:
+    match = SKIN_STREAM_REGEX.match(file_name)
     if not match:
         return ""
 
@@ -79,73 +188,80 @@ def get_stream(file_name):
 # TODO: once a combination has been chosen, it can't be chosen again!
 
 
-def traverse(tree, branch, root_dir):
+def traverse(tree: list, branch: list, parent_dir: str):
 
-    global CURRENT_STREAM
+    # TODO: Find a way that doesn't rely on globals
+    global SKIN_STREAM
+    global MOUTH_06_HAS_BEEN_CHOSEN
+    global MOUTH_06_HAS_GADGETS
 
-    if IS_DEBUG:
-        sys.stderr.write("Looking into %s\n" % root_dir)
-    branch.append(os.path.basename(root_dir))
+    if DEBUG_LEVEL >= 2:
+        sys.stderr.write("Looking into %s\n" % parent_dir)
+    branch.append(os.path.basename(parent_dir))
 
-    if IS_DEBUG:
-        sys.stderr.write("\tCurrent branch: %s\n" % branch)
+    if DEBUG_LEVEL >= 2:
+        sys.stderr.write("\tCurrent branch: %s\n" % " / ".join(branch))
 
-    disk_content = os.listdir(root_dir)
+    disk_content = os.listdir(parent_dir)
 
     # 1. Is this is a directory with overlays?
+    # EG: A directory with final files
     overlays = [
         d for d in disk_content
-        if OVERLAY_REGEX.match(d) and os.path.isdir(os.path.join(root_dir, d))
+        if OVERLAY_REGEX.match(d) and os.path.isdir(os.path.join(parent_dir, d))
     ]
     overlays = sorted(overlays)
     if overlays:
-        if IS_DEBUG:
+        if DEBUG_LEVEL >= 2:
             sys.stderr.write("\tFound overlays: %s\n" % overlays)
+
         for overlay in overlays:
             current_branch = branch[:]
-            traverse(tree, branch, os.path.join(root_dir, overlay))
+            traverse(tree, branch, os.path.join(parent_dir, overlay))
             branch = current_branch
 
+        # End of recursion
         return
 
     # 2. Is this a directory with variants?
-    variants = [
+    # EG: a directory containing other directories, each one with leaves
+    variants = sorted([
         d for d in disk_content
-        if os.path.isdir(os.path.join(root_dir, d))
-    ]
+        if os.path.isdir(os.path.join(parent_dir, d))
+    ])
 
     if variants:
         chosen_variant = pick_variant(variants)
-        if IS_DEBUG:
-            sys.stderr.write(f"\tChosen variant: {chosen_variant}\n")
-        traverse(tree, branch, os.path.join(root_dir, chosen_variant))
+        if DEBUG_LEVEL >= 1:
+            sys.stderr.write(f"\tChosen variant: '{chosen_variant}'\n")
+        traverse(tree, branch, os.path.join(parent_dir, chosen_variant))
 
         return
 
     # 3. Is this a directory with the final leaves?
-    if IS_DEBUG:
+    if DEBUG_LEVEL >= 2:
         sys.stderr.write("\tNo variants, looking for leaves..\n")
     all_leaves = [
         f for f in disk_content
-        if os.path.isfile(os.path.join(root_dir, f))
+        if os.path.isfile(os.path.join(parent_dir, f))
         and f not in [".DS_Store"]
     ]
     potential_leaves = []
-    if CURRENT_STREAM and "skins" in branch[-1]:
+    if SKIN_STREAM and "skins" in branch[-1]:
         for leaf in all_leaves:
-            match = STREAM_REGEX.match(leaf)
+            match = SKIN_STREAM_REGEX.match(leaf)
             if not match or not match.groups():
                 continue
-            if match and CURRENT_STREAM == match.groups()[0]:
+            if match and SKIN_STREAM == match.groups()[0]:
                 potential_leaves.append(leaf)
 
-        if IS_DEBUG:
+        if DEBUG_LEVEL >= 2:
             sys.stderr.write("\tPotential leaves (after filtering "
                              "for stream): %s\n" % potential_leaves)
     else:
         potential_leaves = all_leaves[:]
 
-        if IS_DEBUG:
+        if DEBUG_LEVEL >= 2:
             sys.stderr.write("\tPotential leaves (no filtering): %s\n"
                              % potential_leaves)
 
@@ -158,22 +274,40 @@ def traverse(tree, branch, root_dir):
 
     # Pick the skin / stream
     if branch[-1].lower() == SKINS_DIR_NAME:
-        CURRENT_STREAM = get_stream(final_leaf)
-        sys.stderr.write(f"Chosen stream is {CURRENT_STREAM}\n")
+        SKIN_STREAM = get_skin_stream(final_leaf)
 
-        if IS_DEBUG:
-            sys.stderr.write(f"\tCurrent stream: {CURRENT_STREAM}\n")
+        if DEBUG_LEVEL >= 1:
+            sys.stderr.write(f"\t*** Chosen stream: '{SKIN_STREAM}'\n")
+
+    # Are we in the special case of mouths/hands 06 ?
+    if MOUTH_06_REGEX.match(final_leaf):
+        MOUTH_06_HAS_BEEN_CHOSEN = True
+        if DEBUG_LEVEL >= 1:
+            sys.stderr.write("\t--> Chosen mouth 06. Special behaviour will be activated.\n")
+
+    if MOUTH_06_HAS_GADGET_REGEX.match(final_leaf):
+        MOUTH_06_HAS_GADGETS = True
+        if DEBUG_LEVEL >= 1:
+            sys.stderr.write("\t--> mouth 06 has gadgets. No gadgets should appear in 'hands'\n")
 
     branch.append(final_leaf)
 
-    if IS_DEBUG:
-        sys.stderr.write(f"\tFound final leaf ({final_leaf}). \n")
+    if DEBUG_LEVEL >= 1:
+        sys.stderr.write(f"\t<^> Found final leaf ({final_leaf}). \n")
 
     tree.append("/".join(branch))
     return tree
 
 
-def generate_permutation(root_dir):
+def generate_permutation(root_dir: str) -> str:
+    """Generate a random permutation, and return the checksum describing it.
+
+    :param root_dir: absolute path to the start of the archive
+    :type root_dir: str
+
+    :return: md5sum checksum of the generated tree
+    :rtype: str
+    """
 
     tree = []
     current_branch = []
