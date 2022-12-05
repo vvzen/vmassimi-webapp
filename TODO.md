@@ -1,5 +1,17 @@
 # TODO
 
+## Permutation algo
+
+- [x] Skin selection
+- [x] Mouth 06 -> force Hands 06 constraint
+- [ ] Eyes 12 -> skip Mouth 4,5 constraint
+- [ ] Eyelashes constraint based on chosen eye
+- [ ] Ears_2 -> no head gadgets constraint
+- [ ] Constrained choices based on initial Head gadget choice
+- [ ] No lazer if any of wool, cop, hat, weed, rus
+
+## Infrastructure
+
 - [x] [Frontend] Show image when hovering over file node in Inventory
 - [x] [Backend] Add /api/status endpoint
 - [x] [Frontend/Backend] Add 'Random' Page to generate a random cat
