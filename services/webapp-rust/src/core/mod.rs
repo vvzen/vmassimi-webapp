@@ -14,7 +14,7 @@ use std::time::SystemTime;
 use sysinfo::{Disk, DiskExt, System, SystemExt};
 use tar::Archive;
 use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 // JSON
 use serde::{Deserialize, Serialize};
@@ -76,6 +76,7 @@ pub struct JobData {
     job_id: String,
     status: JobStatus,
     progress: Option<String>,
+    recipe: Option<String>,
     image: Option<String>,
 }
 
@@ -726,6 +727,7 @@ pub async fn queue_generation_of_random_image() -> Json<JobData> {
         status: JobStatus::STARTED,
         image: None,
         progress: None,
+        recipe: None,
     };
 
     // In the background, start the generation of the image
@@ -778,15 +780,16 @@ pub async fn get_job(query: Query<JobQuery>) -> Json<JobData> {
         status: JobStatus::NOT_FOUND,
         progress: None,
         image: None,
+        recipe: None,
     };
 
-    // TODO: Distinguish between failed jobs and jobs that don't exist at all
-    let default_data = JobData {
+    let mut default_data = JobData {
         endpoint: String::from("api/jobs"),
         job_id: String::from(job_id),
         status: JobStatus::NOT_FOUND,
         progress: None,
         image: None,
+        recipe: None,
     };
 
     // Check if the job has finished
@@ -805,18 +808,48 @@ pub async fn get_job(query: Query<JobQuery>) -> Json<JobData> {
         }
     }
 
-    if !job_path.exists() {
-        eprintln!(
-            "{} doesn't exist, checking if it's in progress..",
-            job_path.display()
-        );
+    let job_recipe_file = format!("{}.recipe", job_id);
+    let job_recipe_path = job_path.parent().unwrap().join(job_recipe_file);
+
+    // No recipe? Then job doesn't exist
+    let mut recipe_content = None;
+    if !job_recipe_path.exists() {
+        eprintln!("{} recipe file was not found.", job_recipe_path.display());
+        return Json(default_data);
     }
 
-    if !job_progress_path.exists() {
+    // Read the recipe
+    eprintln!("Reading job recipe..");
+    match fs::read(&job_recipe_path) {
+        Ok(r) => match std::str::from_utf8(&r) {
+            Ok(s) => {
+                recipe_content = Some(String::from(s));
+            }
+            Err(e) => {
+                eprintln!("Failed to recipe file as str. Error: {:#?}", e);
+            }
+        },
+        Err(e) => {
+            eprintln!(
+                "Failed to read recipe file in {}. Error: {:#?}",
+                job_recipe_path.display(),
+                e
+            );
+        }
+    }
+
+    // Image doesn't exist and there's no progress: the job doesn't exist
+    if !job_path.exists() && !job_progress_path.exists() {
         eprintln!(
             "{} doesn't exist and is not in progress.",
             job_path.display()
         );
+        return Json(default_data);
+    }
+
+    // If there's a recipe but no progress and no image, the job has failed
+    if job_recipe_path.exists() && !job_path.exists() && !job_progress_path.exists() {
+        default_data.status = JobStatus::FAILED;
         return Json(default_data);
     }
 
@@ -833,6 +866,7 @@ pub async fn get_job(query: Query<JobQuery>) -> Json<JobData> {
             }
             Err(e) => {
                 eprintln!("{e}");
+                job_data.recipe = recipe_content;
                 return Json(default_data);
             }
         }
@@ -848,6 +882,7 @@ pub async fn get_job(query: Query<JobQuery>) -> Json<JobData> {
                 eprintln!("Job progress: {}", l);
                 job_data.progress = Some(String::from(l));
                 job_data.status = JobStatus::STARTED;
+                job_data.recipe = recipe_content;
                 return Json(job_data);
             }
             None => {
@@ -863,6 +898,7 @@ pub async fn get_job(query: Query<JobQuery>) -> Json<JobData> {
             eprintln!("Image has finished rendering");
             job_data.image = Some(base64_str);
             job_data.progress = Some(String::from("completed"));
+            job_data.recipe = recipe_content;
             job_data.status = JobStatus::COMPLETED;
         }
         Err(e) => {
@@ -915,35 +951,40 @@ pub async fn generate_random_image(job_id_str: &str) -> anyhow::Result<()> {
         .spawn()
         .expect("Failed to spawn generate_permutation.py");
 
-    // Update progress
-    match fs::write(&job_path, "progress: 20%") {
-        Ok(_) => {}
-        Err(e) => {
-            let message = format!(
-                "Failed to write jobs file ({}) on disk : {}",
-                job_path.display(),
-                e
-            );
-            anyhow::bail!(message);
-        }
-    }
+    let job_recipe_file = format!("{}.recipe", job_id_str);
+    let job_recipe_path = job_path.parent().unwrap().join(job_recipe_file);
+    fs::File::create(&job_recipe_path)?;
 
-    let render_stdin: Stdio = generate
+    let mut recipe_content = String::new();
+    generate
         .stdout
-        .take()
+        .as_mut()
         .unwrap()
-        .try_into()
-        .expect("Failed to convert stdout to Stdio");
+        .read_to_string(&mut recipe_content)
+        .await
+        .expect("Failed to get generate stdout and read it to string");
 
+    eprintln!("Recipe content: {}", &recipe_content);
+
+    // Write the recipe file
+    eprintln!("Saving recipe to {}", job_recipe_path.display());
+    fs::write(&job_recipe_path, &recipe_content)?;
+
+    // Redirect stderr to file
     let stderr_file = fs::File::create(&job_progress_path).unwrap();
     let render_stderr = Stdio::from(stderr_file);
 
     eprintln!("Progress will be saved to {}", job_progress_path.display());
 
+    // Render the recipe
     let image_name = format!("{}", job_id_str);
     let render = tokio::process::Command::new("/app/image-composite-linux")
-        .args(["--image-name", &image_name])
-        .stdin(render_stdin)
+        .args([
+            "--image-name",
+            &image_name,
+            "--recipe-file",
+            &job_recipe_path.to_str().unwrap(),
+        ])
         .stdout(Stdio::piped())
         .stderr(render_stderr)
         .spawn()

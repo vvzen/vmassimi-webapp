@@ -8,6 +8,7 @@ generateButton.addEventListener("click", onGeneratePreview);
 const progressDiv = document.getElementById("job-progress-info");
 const progressBar = document.getElementById("job-progress-bar");
 const progressText = document.getElementById("job-progress-report");
+const recipeParagraph = document.getElementById("job-recipe");
 const progressRegex = /PROGRESS: (\d{2})%;([ :.\w\d]*)/;
 
 const imageDiv = document.getElementById("generated-image-container");
@@ -44,7 +45,8 @@ function onGeneratePreview(){
         getJobInfoIntervalID = setInterval(getJobInfo, JOB_RETRIEVAL_INTERVAL, job_url);
         progressDiv.style.visibility = "visible";
         progressText.innerText = "Just started!";
-        generateButton.style.visibility = "hidden"
+        //generateButton.style.visibility = "hidden"
+        generateButton.style.display = "none";
 
       }
       else {
@@ -77,19 +79,30 @@ function getJobInfo(url){
     .then((data) => {
       console.log("Job result", data);
 
+      if (data.recipe){
+        let recipe = data.recipe.split("\n").join("\n\n");
+        recipeParagraph.innerText = data.recipe;
+      }
+      else {
+        recipeParagraph.innerText = "?";
+      }
+
       if (data.status == "FAILED"){
         console.error("Job has failed.");
         clearInterval(getJobInfoIntervalID);
-        progressDiv.style.visibility = "hidden";
+        //progressDiv.style.visibility = "hidden";
+        progressDiv.style.display = "none";
       }
       else if (data.status == "STARTED"){
 
         console.log("Job is in progress.");
         console.log(data.progress);
 
+        progressDiv.style.display = "block";
+
         // Extract the percentage
         let progressString = data.progress;
-        progressDiv.style.visibility = "visible";
+        //progressDiv.style.visibility = "visible";
 
         let results = progressRegex.exec(data.progress);
         let progress = results[1];
@@ -109,8 +122,11 @@ function getJobInfo(url){
         img.src = `data:image/png;base64,${data.image}`;
         img.style.display = "block";
         imageDiv.style.display = "block";
-        generateButton.style.visibility = "visible"
-        progressDiv.style.visibility = "hidden";
+        //generateButton.style.visibility = "visible"
+        generateButton.style.display = "inline-block";
+
+        //progressDiv.style.visibility = "hidden";
+        progressDiv.style.display = "none";
 
         clearInterval(getJobInfoIntervalID);
         numAttempts = 0;
