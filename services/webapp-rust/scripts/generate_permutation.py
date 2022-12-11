@@ -13,10 +13,15 @@ SKIN_STREAM = None
 SKINS_DIR_NAME = "02_body_skins"
 TREES_FILE_NAME = "trees.txt"
 
+# Spaghetti code stuff to handle the various special cases
 MOUTH_06_HAS_BEEN_CHOSEN = False
 MOUTH_06_HAS_GADGETS = False
 MOUTH_06_REGEX = re.compile(r"mouth_\d*6")
 MOUTH_06_HAS_GADGET_REGEX = re.compile(r"mouth_\d*6_gadget")
+
+MOUTH_04_05_REGEX = re.compile(r"mouth_0[45]")
+EYES_12_REGEX = re.compile(r"eyes_12")
+EYES_12_HAS_BEEN_CHOSEN = False
 
 DEBUG_LEVEL = int(os.getenv("DEBUG_LEVEL", 0))
 
@@ -131,7 +136,7 @@ def pick_variant_weighted_approach(variants):
 def pick_variant_random_approach(variants):
 
     if DEBUG_LEVEL >= 1:
-        sys.stderr.write("\tPicking variant based on random approach\n")
+        sys.stderr.write(f"\tPicking random variant from {variants}\n")
 
     num_variants = len(variants)
     if num_variants == 1:
@@ -151,12 +156,12 @@ def pick_variant(variants):
 
     global MOUTH_06_HAS_BEEN_CHOSEN
 
-    if DEBUG_LEVEL >= 1:
-        sys.stderr.write(f"\tPicking variant among {variants}\n")
-
     if not variants:
         raise RuntimeError("Cannot pick a variant - "
                            "no variants were provided!")
+
+    if DEBUG_LEVEL >= 1:
+        sys.stderr.write(f"\tPicking variant. Initial variants: {variants}\n")
 
     # Legendary/Uncommon items: compute the weighted probability of a variant
     # based on its name, then pick it
@@ -169,6 +174,10 @@ def pick_variant(variants):
         we_are_choosing_hands = [v for v in variants if 'hand' in v]
         if we_are_choosing_hands:
             variants = [v2 for v2 in variants if '6' in v2]
+
+    # Mouth 04 and 05 case: they can't go with Eyes 12
+    if EYES_12_HAS_BEEN_CHOSEN:
+        variants = [v for v in variants if not MOUTH_04_05_REGEX.match(v)]
 
     # Normal case: equal probabilities (just chose one at random)
     return pick_variant_random_approach(variants)
@@ -192,6 +201,7 @@ def traverse(tree: list, branch: list, parent_dir: str):
 
     # TODO: Find a way that doesn't rely on globals
     global SKIN_STREAM
+    global EYES_12_HAS_BEEN_CHOSEN
     global MOUTH_06_HAS_BEEN_CHOSEN
     global MOUTH_06_HAS_GADGETS
 
@@ -278,6 +288,12 @@ def traverse(tree: list, branch: list, parent_dir: str):
 
         if DEBUG_LEVEL >= 1:
             sys.stderr.write(f"\t*** Chosen stream: '{SKIN_STREAM}'\n")
+
+    # Are we in the special case of mouths 04/05 ?
+    if EYES_12_REGEX.match(final_leaf):
+        EYES_12_HAS_BEEN_CHOSEN = True
+        if DEBUG_LEVEL >= 1:
+            sys.stderr.write("\t--> Chosen Eyes 12. Special behaviour will be activated.\n")
 
     # Are we in the special case of mouths/hands 06 ?
     if MOUTH_06_REGEX.match(final_leaf):
