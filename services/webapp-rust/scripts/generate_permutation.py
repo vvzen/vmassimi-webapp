@@ -450,7 +450,8 @@ def traverse(tree: list, branch: list, parent_dir: str):
         filtered_leaves = filter_based_on_head_gadget(potential_leaves)
 
     if len(filtered_leaves) != len(potential_leaves):
-        sys.stderr.write(f"\tPotential leaves (after filtering): {filtered_leaves}\n")
+        if DEBUG_LEVEL >= 2:
+            sys.stderr.write(f"\tPotential leaves (after filtering): {filtered_leaves}\n")
 
     if not filtered_leaves:
         return
