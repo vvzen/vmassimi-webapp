@@ -29,7 +29,7 @@ if [ ! -x "$image_app" ]; then
     exit 1
 fi
 
-total_iterations="100"
+total_iterations=100
 
 # NB: this is a bash built-in
 SECONDS=0
@@ -41,17 +41,14 @@ for iter_num in $(seq $total_iterations); do
     echo "Generating permutation $iter_num / $total_iterations"
     recipe_file="recipes/permutation_${iter_num}"
 
-    #python3 generate_permutation.py "$input_directory" 2> /dev/null 1> "$recipe_file"
-    #recipe=$(python3 generate_permutation.py "$input_directory" 2> /dev/null | tee)
-    python3 generate_permutation.py $input_directory 1> $recipe_file
-    echo -e "$iter_num\n$(cat $recipe_file)\n\n" >> recipes_log 
+    touch recipe_std_err
+    python3 generate_permutation.py $input_directory 1> $recipe_file 2> recipe_std_err
+    echo -e "$iter_num\n$(cat $recipe_file)\n$(cat recipe_std_err)\n" >> recipes/recipes_log
 
     echo "Rendering image.."
-    #echo $recipe | $image_app --image-name "test_${iter_num}"
-    #result=$("echo $recipe | $image_app --image-name test_${iter_num}")
     eval "cat $recipe_file | $image_app --image-name test_${iter_num}" 
-    #rm "$recipe_file"
 done
+rm recipe_std_err
 
 duration=$SECONDS
 echo "$(($duration / 60)) minutes and $(($duration % 60)) seconds elapsed."
