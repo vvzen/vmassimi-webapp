@@ -133,6 +133,19 @@ HEAD_GAGETS_COMBINATIONS = {
     },
 }
 
+SKINS_TO_VALID_MOUTHS_MAP = {
+    'silver': [1, 2, 3, 6],
+    'alien_cheeta': [1, 2, 3, 6, 7],
+    'dark_pink': [1, 2, 7],
+    'gold': [1, 2, 3, 7],
+    'tiger_cheetah': [1, 2, 3, 7],
+    'tiger_giraffe': [1, 2, 3, 7],
+    'tiger_tiger': [1, 2, 3, 7],
+    'tiger_grey': [1, 2, 3, 7],
+    'tiger_zebra': [1, 2, 3, 7],
+    'zombie': [1, 2, 7],
+}
+
 
 def print_debug_message_once(message: str):
     if not getattr(print_debug_message_once, '_data', None):
@@ -296,6 +309,21 @@ def pick_variant(variants):
         we_are_choosing_head_gadgets = [v for v in variants if 'head_gadget' in v]
         if we_are_choosing_head_gadgets:
             variants = [v for v in variants if 'no_gadget' in v]
+
+    # Special case for Mouths/Skins:
+    we_are_choosing_mouths = [v for v in variants if 'mouth_' in v]
+    skin_has_mouth_filter = SKINS_TO_VALID_MOUTHS_MAP.get(SKIN_STREAM)
+
+    if we_are_choosing_mouths and skin_has_mouth_filter:
+        print_debug_message_once(f"\tFiltering mouths based on {SKIN_STREAM} skin\n")
+        valid_mouths_numbers = [str(n) for n in skin_has_mouth_filter]
+        filtered_variants = []
+        for variant in variants:
+            for valid_mouth_number in valid_mouths_numbers:
+                if valid_mouth_number in variant:
+                    filtered_variants.append(variant)
+        if filtered_variants:
+            variants = filtered_variants[:]
 
     # Normal case: equal probabilities (just chose one at random)
     return pick_variant_random_approach(variants)
