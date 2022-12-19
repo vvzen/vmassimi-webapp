@@ -20,6 +20,8 @@ MOUTH_06_HAS_GADGETS = False
 MOUTH_06_REGEX = re.compile(r"mouth_\d*6")
 MOUTH_06_HAS_GADGET_REGEX = re.compile(r"mouth_\d*6_gadget")
 
+HANDS_07_HAS_BEEN_CHOSEN = False
+
 EARS_2_HAS_BEEN_CHOSEN = False
 EARS_2_REGEX = re.compile(r"ear_2")
 
@@ -367,6 +369,7 @@ def traverse(tree: list, branch: list, parent_dir: str):
     global MOUTH_06_HAS_BEEN_CHOSEN
     global MOUTH_06_HAS_GADGETS
     global EARS_2_HAS_BEEN_CHOSEN
+    global HANDS_07_HAS_BEEN_CHOSEN
     global HEAD_GADGET_CHOSEN
 
     if DEBUG_LEVEL >= 2:
@@ -485,10 +488,17 @@ def traverse(tree: list, branch: list, parent_dir: str):
         if DEBUG_LEVEL >= 1:
             print_debug_message_once("\t--> mouth 06 has gadgets. No gadgets should appear in 'hands'\n")
 
+    # Special case for Ears 2
     if EARS_2_REGEX.match(final_leaf):
         EARS_2_HAS_BEEN_CHOSEN = True
         if DEBUG_LEVEL >= 1:
             print_debug_message_once("\t--> ears 2 has been chosen. 09_head_gadget should be 'no_gadget'\n")
+
+    # Special case for Hands 7
+    if "hand_7" in final_leaf:
+        HANDS_07_HAS_BEEN_CHOSEN = True
+        if DEBUG_LEVEL >= 1:
+            print_debug_message_once("\t--> hands 7 has been chosen. We should have no mouth gadgets.\n")
 
     branch.append(final_leaf)
 
@@ -513,16 +523,39 @@ def generate_permutation(root_dir: str) -> str:
     current_branch = []
     traverse(tree, current_branch, root_dir)
 
-    sys.stdout.write("root_dir: %s\n" % root_dir)
+    sys.stderr.write("Finished traversing..\n")
+
+    # FIXME: find a more elegant way
+    # Special handling for hand 7, which is easier to do in retrospect
+    # since the traverse() algo is currently recursive
+    new_tree = []
+    if HANDS_07_HAS_BEEN_CHOSEN:
+        for branch in tree:
+            if "mouth" in branch and "_gadget" in branch:
+                if DEBUG_LEVEL > 1:
+                    sys.stderr.write(f"Removing {branch} because we have Hands 7, which are incompatible.\n")
+                continue
+
+            new_tree.append(branch)
+
+    if new_tree:
+        final_tree = new_tree[:]
+    else:
+        final_tree = tree[:]
+
+    recipe_stdout = []
+    recipe_stdout.append(f"root_dir: {root_dir}")
+
     root_name = os.path.basename(root_dir)
 
     md5 = hashlib.md5()
 
-    for branch in tree:
+    for branch in final_tree:
         branch_cleaned = branch[len(root_name)+1:]
-        sys.stdout.write(branch_cleaned)
-        sys.stdout.write("\n")
+        recipe_stdout.append(f"{branch_cleaned}")
         md5.update(branch_cleaned.encode("utf-8"))
+
+    sys.stdout.write("\n".join(recipe_stdout))
 
     sys.stderr.write("\n")
     return md5.hexdigest()
