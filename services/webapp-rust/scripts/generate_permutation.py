@@ -155,7 +155,7 @@ def print_debug_message_once(message: str):
 
     if message not in data:
         sys.stderr.write(message)
-        data[message] = 1
+        print_debug_message_once._data[message] = 1
 
 
 def get_probability(name: str) -> float:
@@ -551,17 +551,17 @@ def generate_permutation(root_dir: str) -> str:
     current_branch = []
     traverse(tree, current_branch, root_dir)
 
-    sys.stderr.write("Finished traversing..\n")
-
     # FIXME: find a more elegant way
-    # Special handling for hand 7, which is easier to do in retrospect
+    # Special handling for hand 7, which is easier to do after creating the tree
     # since the traverse() algo is currently recursive
     new_tree = []
     if HANDS_07_HAS_BEEN_CHOSEN:
         for branch in tree:
             if "mouth" in branch and "_gadget" in branch:
                 if DEBUG_LEVEL > 1:
-                    sys.stderr.write(f"Removing {branch} because we have Hands 7, which are incompatible.\n")
+                    sys.stderr.write(
+                        (f"\tRemoving {branch} because we "
+                         "have Hands 7, which are incompatible.\n"))
                 continue
 
             new_tree.append(branch)
