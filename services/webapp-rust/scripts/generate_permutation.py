@@ -210,8 +210,8 @@ def pick_hand_06_leaf(leaves: list):
         if '6' in leaf:
             new_leaves.append(leaf)
 
-    index = random.randint(0, len(leaves)-1)
-    return leaves[index]
+    index = random.randint(0, len(new_leaves)-1)
+    return new_leaves[index]
 
 
 def should_use_weighted_approach(variants):
@@ -276,10 +276,13 @@ def pick_variant(variants):
 
     # Mouth 06 case
     # If we are choosing hands, and mouth 06 has been chosen, we can only use hands 06
-    if MOUTH_06_HAS_BEEN_CHOSEN:
-        we_are_choosing_hands = [v for v in variants if 'hand' in v]
-        if we_are_choosing_hands:
+    we_are_choosing_hands = [v for v in variants if 'hand' in v]
+    if we_are_choosing_hands:
+        if MOUTH_06_HAS_BEEN_CHOSEN:
             variants = [v2 for v2 in variants if '6' in v2]
+        # if mouth 06 hasn't been chosen, we can't choose hands 06
+        else:
+            variants = [v2 for v2 in variants if '6' not in v2]
 
     # Mouth 04 and 05 case: they can't go with Eyes 12
     if EYES_12_HAS_BEEN_CHOSEN:
