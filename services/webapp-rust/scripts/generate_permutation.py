@@ -4,8 +4,9 @@ import re
 import sys
 import bisect
 import random
+import fnmatch
 import hashlib
-from typing import Any
+from typing import Any, List
 
 OVERLAY_REGEX = re.compile(r"^\d{2}")
 SKIN_STREAM_REGEX = re.compile(r"(?:^(?:body_skin_)|^(?:\w+_\d+_))([&]*[A-Za-z0-9&_]*)\.png")
@@ -19,9 +20,14 @@ MOUTH_06_HAS_GADGETS = False
 MOUTH_06_REGEX = re.compile(r"mouth_\d*6")
 MOUTH_06_HAS_GADGET_REGEX = re.compile(r"mouth_\d*6_gadget")
 
+EARS_2_HAS_BEEN_CHOSEN = False
+EARS_2_REGEX = re.compile(r"ear_2")
+
 MOUTH_04_05_REGEX = re.compile(r"mouth_0[45]")
 EYES_12_REGEX = re.compile(r"eyes_12")
 EYES_12_HAS_BEEN_CHOSEN = False
+
+HEAD_GADGET_CHOSEN: str = ""
 
 DEBUG_LEVEL = int(os.getenv("DEBUG_LEVEL", 0))
 
@@ -36,9 +42,109 @@ NAMES_PROBABILITIES = {
     "legendary": 3.0 / 100.0,
 }
 
+# Special variables for the head
+# Expressed with 'fnmatch' syntax
+HEAD_GAGETS_COMBINATIONS = {
+    'head_gadget_alloro': {
+        'y': ['*gadget_ears*'],
+        'n': ['*gadget_earrings*'],
+    },
+    'head_gadget_wool': {
+        'y': ['*gadget_ears*'],
+        'n': ['*gadget_earrings*'],
+    },
+    'head_gadget_cop': {
+        'y': ['*gadget_ears*'],
+        'n': ['*gadget_earrings*'],
+    },
+    'head_gadget_devil': {
+        'n': ['*gadget_ears*'],
+        'y': ['*gadget_earrings*'],
+    },
+    'head_gadget_hat': {
+        'n': ['*peace*', '*cross*', '*feather*'],
+        'y': ['*gadget_earrings*'],
+    },
+    'head_gadget_hat1': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_hat2': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_pika': {
+        'n': ['*gadget_ears*'],
+        'y': ['*gadget_earrings*'],
+    },
+    'head_gadget_angel': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_sail': {
+        'n': ['*peace*', '*cross*', '*feather*'],
+        'y': [],
+    },
+    'head_gadget_weed': {
+        'n': ['*peace*', '*cross*', '*gadget_earrings*'],
+        'y': [],
+    },
+    'head_gadget_crown': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_party': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_rus': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_bomb': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_hood': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_punk': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_bandana': {
+        'y': [],
+        'n': ['*gadget_earrings*', '*peace*', '*feather*', '*cross*'],
+    },
+    'head_gadget_bandana1': {
+        'y': ['*gadget_ears*'],
+        'n': ['*gadget_earrings*'],
+    },
+    'head_gadget_bandana2': {
+        'y': ['*gadget_ears*'],
+        'n': ['*gadget_earrings*'],
+    },
+    'head_gadget_beer': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+}
+
+
+def print_debug_message_once(message: str):
+    if not getattr(print_debug_message_once, '_data', None):
+        print_debug_message_once._data = {}
+
+    data = getattr(print_debug_message_once, '_data')
+
+    if message not in data:
+        sys.stderr.write(message)
+        data[message] = 1
+
 
 def get_probability(name: str) -> float:
-    """Given a name in input, print back the probability associated with that name being chosen
+    """Given a name in input, return back the probability associated with that name being chosen
 
     :param name: name
     :type name: str
@@ -179,6 +285,13 @@ def pick_variant(variants):
     if EYES_12_HAS_BEEN_CHOSEN:
         variants = [v for v in variants if not MOUTH_04_05_REGEX.match(v)]
 
+    # Special case for ears 2: when we get to choose a head gadget,
+    # we can only choose the 'head_gadget_plus_eyes' with 'no_gadget'
+    if EARS_2_HAS_BEEN_CHOSEN:
+        we_are_choosing_head_gadgets = [v for v in variants if 'head_gadget' in v]
+        if we_are_choosing_head_gadgets:
+            variants = [v for v in variants if 'no_gadget' in v]
+
     # Normal case: equal probabilities (just chose one at random)
     return pick_variant_random_approach(variants)
 
@@ -194,7 +307,53 @@ def get_skin_stream(file_name: str) -> str:
 
     return groups[0]
 
-# TODO: once a combination has been chosen, it can't be chosen again!
+
+def choose_head_gadget(root_dir: str) -> str:
+    variants = [
+        d for d in os.listdir(root_dir)
+        if os.path.isdir(os.path.join(root_dir, d))
+    ]
+    num_variants = len(variants)
+
+    dir_index = random.randint(0, num_variants-1)
+    random_dir = variants[dir_index]
+    random_dir_path = os.path.join(root_dir, random_dir)
+
+    files = [
+        f for f
+        in os.listdir(random_dir_path)
+        if os.path.isfile(os.path.join(random_dir_path, f))
+    ]
+
+    file_index = random.randint(0, len(files)-1)
+    return files[file_index].replace(".png", "")
+
+
+def filter_based_on_head_gadget(leaves: List[str]) -> list:
+
+    combinations = HEAD_GAGETS_COMBINATIONS.get(HEAD_GADGET_CHOSEN)
+    if not combinations:
+        return leaves
+
+    leaves_to_keep = combinations['y']
+    leaves_to_avoid = combinations['n']
+
+    filtered_leaves = []
+
+    # First pass: add variants to keep
+    for _leaf in leaves:
+        for to_keep in leaves_to_keep:
+            if fnmatch.fnmatch(_leaf, to_keep):
+                filtered_leaves.append(_leaf)
+
+    # Second pass: remove variants to avoid
+    returned_leaves = filtered_leaves[:]
+    for _leaf_2 in filtered_leaves:
+        for to_avoid in leaves_to_avoid:
+            if fnmatch.fnmatch(_leaf_2, to_avoid):
+                returned_leaves.pop(returned_leaves.index(_leaf_2))
+
+    return returned_leaves
 
 
 def traverse(tree: list, branch: list, parent_dir: str):
@@ -204,6 +363,8 @@ def traverse(tree: list, branch: list, parent_dir: str):
     global EYES_12_HAS_BEEN_CHOSEN
     global MOUTH_06_HAS_BEEN_CHOSEN
     global MOUTH_06_HAS_GADGETS
+    global EARS_2_HAS_BEEN_CHOSEN
+    global HEAD_GADGET_CHOSEN
 
     if DEBUG_LEVEL >= 2:
         sys.stderr.write("Looking into %s\n" % parent_dir)
@@ -221,6 +382,14 @@ def traverse(tree: list, branch: list, parent_dir: str):
         if OVERLAY_REGEX.match(d) and os.path.isdir(os.path.join(parent_dir, d))
     ]
     overlays = sorted(overlays)
+
+    # 0. If this is the first iteration, we need to chose a head gadget
+    if os.path.basename(parent_dir) == "00_heads_assets":
+        HEAD_GADGET_CHOSEN = choose_head_gadget(parent_dir)
+        if DEBUG_LEVEL >= 1:
+            sys.stderr.write(f"\t--> Head gadget chosen: {HEAD_GADGET_CHOSEN} <--\n")
+        return
+
     if overlays:
         if DEBUG_LEVEL >= 2:
             sys.stderr.write("\tFound overlays: %s\n" % overlays)
@@ -275,12 +444,18 @@ def traverse(tree: list, branch: list, parent_dir: str):
             sys.stderr.write("\tPotential leaves (no filtering): %s\n"
                              % potential_leaves)
 
-    # This shouldn't happen (every directory should contain something in the
-    # end) - but still
-    if not potential_leaves:
+    # Special case: Head Gadgets
+    filtered_leaves = potential_leaves
+    if "09_head_gadget_plus_eyes" in parent_dir:
+        filtered_leaves = filter_based_on_head_gadget(potential_leaves)
+
+    if len(filtered_leaves) != len(potential_leaves):
+        sys.stderr.write(f"\tPotential leaves (after filtering): {filtered_leaves}\n")
+
+    if not filtered_leaves:
         return
 
-    final_leaf = pick_leaf(potential_leaves)
+    final_leaf = pick_leaf(filtered_leaves)
 
     # Pick the skin / stream
     if branch[-1].lower() == SKINS_DIR_NAME:
@@ -293,18 +468,23 @@ def traverse(tree: list, branch: list, parent_dir: str):
     if EYES_12_REGEX.match(final_leaf):
         EYES_12_HAS_BEEN_CHOSEN = True
         if DEBUG_LEVEL >= 1:
-            sys.stderr.write("\t--> Chosen Eyes 12. Special behaviour will be activated.\n")
+            print_debug_message_once("\t--> Chosen Eyes 12. Special behaviour will be activated.\n")
 
     # Are we in the special case of mouths/hands 06 ?
     if MOUTH_06_REGEX.match(final_leaf):
         MOUTH_06_HAS_BEEN_CHOSEN = True
         if DEBUG_LEVEL >= 1:
-            sys.stderr.write("\t--> Chosen mouth 06. Special behaviour will be activated.\n")
+            print_debug_message_once("\t--> Chosen mouth 06. Special behaviour will be activated.\n")
 
     if MOUTH_06_HAS_GADGET_REGEX.match(final_leaf):
         MOUTH_06_HAS_GADGETS = True
         if DEBUG_LEVEL >= 1:
-            sys.stderr.write("\t--> mouth 06 has gadgets. No gadgets should appear in 'hands'\n")
+            print_debug_message_once("\t--> mouth 06 has gadgets. No gadgets should appear in 'hands'\n")
+
+    if EARS_2_REGEX.match(final_leaf):
+        EARS_2_HAS_BEEN_CHOSEN = True
+        if DEBUG_LEVEL >= 1:
+            print_debug_message_once("\t--> ears 2 has been chosen. 09_head_gadget should be 'no_gadget'\n")
 
     branch.append(final_leaf)
 
@@ -344,6 +524,7 @@ def generate_permutation(root_dir: str) -> str:
     return md5.hexdigest()
 
 
+# TODO: once a combination has been chosen, it can't be chosen again!
 def main():
     # USAGE:
     # ./generate_permutations.py /some/path/to/sphynx_program/program
