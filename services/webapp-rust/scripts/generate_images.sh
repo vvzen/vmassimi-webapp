@@ -1,10 +1,14 @@
 #!/bin/bash
 
+set -e
+
 # Path pointing to the compiled Rust app
-image_app="/app/image-composite"
+#image_app="/app/image-composite"
+image_app=/Users/valerioviperino/dev/personal/vmassimi/vmassimi-tools/scripts/image-composite/image-composite-macos
 
 # Path pointing to the first directory containing all of the dir structure
-input_directory="../input_for_sphynx"
+#input_directory="../input_for_sphynx"
+input_directory=~/dev/personal/vmassimi/sample-files/sphynx_program
 
 # Sanity checking
 if [ ! -d "$input_directory" ]; then
@@ -25,19 +29,28 @@ if [ ! -x "$image_app" ]; then
     exit 1
 fi
 
-total_iterations="12"
+total_iterations="100"
 
 # NB: this is a bash built-in
 SECONDS=0
 
 echo "--> Generating permutations.."
+mkdir -p recipes
 for iter_num in $(seq $total_iterations); do
+
     echo "Generating permutation $iter_num / $total_iterations"
-    recipe_file="permutation_${iter_num}"
-    python generate_permutation.py "$input_directory" 2> /dev/null 1> "$recipe_file"
+    recipe_file="recipes/permutation_${iter_num}"
+
+    #python3 generate_permutation.py "$input_directory" 2> /dev/null 1> "$recipe_file"
+    #recipe=$(python3 generate_permutation.py "$input_directory" 2> /dev/null | tee)
+    python3 generate_permutation.py $input_directory 1> $recipe_file
+    echo -e "$iter_num\n$(cat $recipe_file)\n\n" >> recipes_log 
+
     echo "Rendering image.."
+    #echo $recipe | $image_app --image-name "test_${iter_num}"
+    #result=$("echo $recipe | $image_app --image-name test_${iter_num}")
     eval "cat $recipe_file | $image_app --image-name test_${iter_num}" 
-    rm "$recipe_file"
+    #rm "$recipe_file"
 done
 
 duration=$SECONDS
