@@ -226,7 +226,7 @@ def pick_eyelashes_leaf(leaves: List[str]):
 
     new_leaves = [
         leaf for leaf in leaves
-        if any([EYES_NUM_CHOSEN in leaf, "eyelashes_no" in leaf])
+        if any([f"{EYES_NUM_CHOSEN}_" in leaf, "eyelashes_no" in leaf])
     ]
 
     if DEBUG_LEVEL >= 1:
@@ -346,6 +346,16 @@ def pick_variant(variants: List[str]):
                     filtered_variants.append(variant)
         if filtered_variants:
             variants = filtered_variants[:]
+
+    # Eyes gadgets are made for a specific eye N
+    if EYES_NUM_CHOSEN:
+        we_are_choosing_eye_gadgets = [v for v in variants if fnmatch.fnmatch(v, "eyes_*_gadget*")]
+
+        if we_are_choosing_eye_gadgets:
+            variants = [v for v in variants if fnmatch.fnmatch(v, f"{EYES_NUM_CHOSEN}_*")]
+            if DEBUG_LEVEL >= 1:
+                print_debug_message_once(f"\tFiltering eyes gadgets based on {EYES_NUM_CHOSEN}\n")
+                print_debug_message_once(f"\tvariants: {variants}\n")
 
     # Normal case: equal probabilities (just chose one at random)
     return pick_variant_random_approach(variants)
