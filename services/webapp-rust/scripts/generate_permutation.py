@@ -137,7 +137,7 @@ HEAD_GAGETS_COMBINATIONS = {
 
 SKINS_TO_VALID_MOUTHS_MAP = {
     'silver': [1, 2, 3],
-    'alien_cheeta': [1, 2, 3, 6, 7],
+    'alien_cheetah': [1, 2, 3, 6, 7],
     'dark_pink': [1, 2, 7],
     'gold': [1, 2, 3, 7],
     'tiger_cheetah': [1, 2, 3, 7],
