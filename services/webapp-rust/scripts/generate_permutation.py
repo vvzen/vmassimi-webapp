@@ -48,67 +48,7 @@ HEAD_GAGETS_COMBINATIONS = {
         'y': ['*gadget_ears*'],
         'n': ['*gadget_earrings*'],
     },
-    'head_gadget_wool': {
-        'y': ['*gadget_ears*'],
-        'n': ['*gadget_earrings*'],
-    },
-    'head_gadget_cop': {
-        'y': ['*gadget_ears*'],
-        'n': ['*gadget_earrings*'],
-    },
-    'head_gadget_devil': {
-        'n': ['*gadget_ears*'],
-        'y': ['*gadget_earrings*'],
-    },
-    'head_gadget_hat': {
-        'n': ['*peace*', '*cross*', '*feather*'],
-        'y': ['*gadget_earrings*'],
-    },
-    'head_gadget_hat1': {
-        'y': ['*gadget_ears*', '*gadget_earrings*'],
-        'n': [],
-    },
-    'head_gadget_hat2': {
-        'y': ['*gadget_ears*', '*gadget_earrings*'],
-        'n': [],
-    },
-    'head_gadget_pika': {
-        'n': ['*gadget_ears*'],
-        'y': ['*gadget_earrings*'],
-    },
     'head_gadget_angel': {
-        'y': ['*gadget_ears*', '*gadget_earrings*'],
-        'n': [],
-    },
-    'head_gadget_sail': {
-        'n': ['*peace*', '*cross*', '*feather*'],
-        'y': [],
-    },
-    'head_gadget_weed': {
-        'n': ['*peace*', '*cross*', '*gadget_earrings*'],
-        'y': [],
-    },
-    'head_gadget_crown': {
-        'y': ['*gadget_ears*', '*gadget_earrings*'],
-        'n': [],
-    },
-    'head_gadget_party': {
-        'y': ['*gadget_ears*', '*gadget_earrings*'],
-        'n': [],
-    },
-    'head_gadget_rus': {
-        'y': ['*gadget_ears*', '*gadget_earrings*'],
-        'n': [],
-    },
-    'head_gadget_bomb': {
-        'y': ['*gadget_ears*', '*gadget_earrings*'],
-        'n': [],
-    },
-    'head_gadget_hood': {
-        'y': ['*gadget_ears*', '*gadget_earrings*'],
-        'n': [],
-    },
-    'head_gadget_punk': {
         'y': ['*gadget_ears*', '*gadget_earrings*'],
         'n': [],
     },
@@ -127,6 +67,66 @@ HEAD_GAGETS_COMBINATIONS = {
     'head_gadget_beer': {
         'y': ['*gadget_ears*', '*gadget_earrings*'],
         'n': [],
+    },
+    'head_gadget_bomb': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_crown': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_cop': {
+        'y': ['*gadget_ears*'],
+        'n': ['*gadget_earrings*', '*_lazer'],
+    },
+    'head_gadget_devil': {
+        'n': ['*gadget_ears*'],
+        'y': ['*gadget_earrings*'],
+    },
+    'head_gadget_hat': {
+        'n': ['*peace*', '*cross*', '*feather*'],
+        'y': ['*gadget_earrings*', '*_lazer'],
+    },
+    'head_gadget_hat1': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_hat2': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_hood': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_pika': {
+        'n': ['*gadget_ears*'],
+        'y': ['*gadget_earrings*'],
+    },
+    'head_gadget_sail': {
+        'n': ['*peace*', '*cross*', '*feather*'],
+        'y': [],
+    },
+    'head_gadget_party': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_punk': {
+        'y': ['*gadget_ears*', '*gadget_earrings*'],
+        'n': [],
+    },
+    'head_gadget_rus': {
+        'y': ['*gadget_ears*', '*gadget_earrings*', '*_lazer'],
+        'n': [],
+    },
+    'head_gadget_weed': {
+        'n': ['*peace*', '*cross*', '*gadget_earrings*', '*_lazer'],
+        'y': [],
+    },
+    'head_gadget_wool': {
+        'y': ['*gadget_ears*'],
+        'n': ['*gadget_earrings*', '*_lazer'],
     },
 }
 
