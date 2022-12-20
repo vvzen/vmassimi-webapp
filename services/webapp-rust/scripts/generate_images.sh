@@ -35,6 +35,7 @@ total_iterations=100
 SECONDS=0
 
 echo "--> Generating permutations.."
+rm -rf recipes
 mkdir -p recipes
 for iter_num in $(seq $total_iterations); do
 

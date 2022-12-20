@@ -301,7 +301,7 @@ def pick_variant(variants: List[str]):
         raise RuntimeError("Cannot pick a variant - "
                            "no variants were provided!")
 
-    if DEBUG_LEVEL >= 1:
+    if DEBUG_LEVEL >= 2:
         sys.stderr.write(f"\tPicking variant. Initial variants: {variants}\n")
 
     # Legendary/Uncommon items: compute the weighted probability of a variant
@@ -335,7 +335,7 @@ def pick_variant(variants: List[str]):
     skin_has_mouth_filter = SKINS_TO_VALID_MOUTHS_MAP.get(SKIN_STREAM)
 
     if we_are_choosing_mouths and skin_has_mouth_filter:
-        if DEBUG_LEVEL > 1:
+        if DEBUG_LEVEL >= 2:
             print_debug_message_once(f"\tFiltering mouths based on {SKIN_STREAM} skin\n")
 
         valid_mouths_numbers = [str(n) for n in skin_has_mouth_filter]
@@ -433,11 +433,11 @@ def traverse(tree: list, branch: list, parent_dir: str):
     global HEAD_GADGET_CHOSEN
     global EYES_NUM_CHOSEN
 
-    if DEBUG_LEVEL >= 2:
+    if DEBUG_LEVEL >= 3:
         sys.stderr.write("Looking into %s\n" % parent_dir)
     branch.append(os.path.basename(parent_dir))
 
-    if DEBUG_LEVEL >= 2:
+    if DEBUG_LEVEL >= 3:
         sys.stderr.write("\tCurrent branch: %s\n" % " / ".join(branch))
 
     disk_content = os.listdir(parent_dir)
@@ -628,6 +628,10 @@ def generate_permutation(root_dir: str) -> str:
     sys.stderr.write("\n")
     return md5.hexdigest()
 
+
+# NB: As usual UNIX practice, stderr is used for logging/errors
+# stdout is used to generate the output we're interesting in
+# this makes the piping easy
 
 # TODO: once a combination has been chosen, it can't be chosen again!
 def main():
