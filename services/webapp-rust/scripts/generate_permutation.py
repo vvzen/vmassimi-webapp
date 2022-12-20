@@ -34,16 +34,11 @@ EYES_12_HAS_BEEN_CHOSEN = False
 HEAD_GADGET_CHOSEN: str = ""
 
 DEBUG_LEVEL = int(os.getenv("DEBUG_LEVEL", 0))
-
-# NB: As usual UNIX practice, stderr is used for logging/errors
-# stdout is used to generate the output we're interesting in
-# this makes the piping easy
-
-NAMES_PROBABILITIES = {
-    "common": 75.0 / 100.0,
-    "uncommon": 15.0 / 100.0,
-    "epic": 7.0 / 100.0,
-    "legendary": 3.0 / 100.0,
+RARITY_PERCENTAGES = {
+    "common": 75,
+    "uncommon": 15,
+    "epic": 7,
+    "legendary": 3,
 }
 
 # Special variables for the head
@@ -161,27 +156,6 @@ def print_debug_message_once(message: str):
         print_debug_message_once._data[message] = 1
 
 
-def get_probability(name: str) -> float:
-    """Given a name in input, return back the probability associated with that name being chosen
-
-    :param name: name
-    :type name: str
-
-    :return: probability of that name being chosen
-    :rtype: float
-    """
-
-    name = name.lower()
-    tokens = name.split("_")
-
-    for token in tokens:
-        probability = NAMES_PROBABILITIES.get(token, None)
-        if probability:
-            return probability
-
-    return NAMES_PROBABILITIES["common"]
-
-
 def pick_leaf(leaves: list) -> Any:
     """Choose a random element from the given ones
 
@@ -271,20 +245,33 @@ def pick_variant_weighted_approach(variants):
     if DEBUG_LEVEL >= 1:
         sys.stderr.write("\tPicking variant based on weighted approach\n")
 
-    probabilities = []
+    # Throw a dice with a 100 faces
+    dice = random.randint(0, 100)
+    target_tokens_map = {
+        "uncommon": dice < RARITY_PERCENTAGES["uncommon"] and dice >= RARITY_PERCENTAGES["epic"],
+        "epic": dice < RARITY_PERCENTAGES["epic"] and dice >= RARITY_PERCENTAGES["legendary"],
+        "legendary": dice < RARITY_PERCENTAGES["legendary"],
+    }
 
-    for variant in variants:
-        probabilities.append((variant, get_probability(variant)))
+    target_prob = "common"
+    for key, value in target_tokens_map.items():
+        if value:
+            target_prob = key
+            break
 
-    probabilities = sorted(probabilities, key=lambda e: e[1])
+    if DEBUG_LEVEL >= 1:
+        sys.stderr.write(f"\tDice value: {dice}\n")
+        sys.stderr.write((
+            f"\tDice result converted to {target_prob}\n"))
 
-    # Throw a dice with a 100
-    dice = random.randrange(0.0, 100.0) // 100.0
+    for variant_name in variants:
+        if target_prob in variant_name:
+            if DEBUG_LEVEL >= 1:
+                sys.stderr.write(f"\tChoosing {variant_name}\n")
 
-    for variant_name, variant_prob in probabilities:
-        if dice <= variant_prob:
             return variant_name
-    return probabilities[-1][0]
+    else:
+        return variant_name
 
 
 def pick_variant_random_approach(variants):
