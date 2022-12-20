@@ -25,8 +25,10 @@ HANDS_07_HAS_BEEN_CHOSEN = False
 EARS_2_HAS_BEEN_CHOSEN = False
 EARS_2_REGEX = re.compile(r"ear_2")
 
+EYES_NUM_CHOSEN = None
+EYES_REGEX = re.compile(r"(eyes_\d+)")
+
 MOUTH_04_05_REGEX = re.compile(r"mouth_0[45]")
-EYES_12_REGEX = re.compile(r"eyes_12")
 EYES_12_HAS_BEEN_CHOSEN = False
 
 HEAD_GADGET_CHOSEN: str = ""
@@ -195,6 +197,9 @@ def pick_leaf(leaves: list) -> Any:
         raise RuntimeError("Cannot pick a leaf - "
                            "no leafs were provided!")
 
+    if DEBUG_LEVEL >= 1:
+        sys.stderr.write(f"\tPicking leaf. Initial choices: {leaves}\n")
+
     # Special Case: mouths 06 can only go with hands 06
     if MOUTH_06_HAS_BEEN_CHOSEN:
         # If we are choosing hands 06, then we need to apply
@@ -203,11 +208,17 @@ def pick_leaf(leaves: list) -> Any:
         if we_are_choosing_hands:
             return pick_hand_06_leaf(leaves)
 
+    # Special case: eyelashes
+    if EYES_NUM_CHOSEN:
+        we_are_choosing_eyelashes = [leaf for leaf in leaves if 'eyelash' in leaf]
+        if we_are_choosing_eyelashes:
+            return pick_eyelashes_leaf(leaves)
+
     index = random.randint(0, len(leaves)-1)
     return leaves[index]
 
 
-def pick_hand_06_leaf(leaves: list):
+def pick_hand_06_leaf(leaves: List[str]):
 
     if DEBUG_LEVEL >= 1:
         sys.stderr.write("\tPicking hand leaf constrained by mouth 06 choice\n")
@@ -224,6 +235,27 @@ def pick_hand_06_leaf(leaves: list):
 
         if '6' in leaf:
             new_leaves.append(leaf)
+
+    if DEBUG_LEVEL >= 1:
+        sys.stderr.write(f"\tPicking hand 06 leaf from: {new_leaves}\n")
+
+    index = random.randint(0, len(new_leaves)-1)
+    return new_leaves[index]
+
+
+def pick_eyelashes_leaf(leaves: List[str]):
+
+    # Special case: eyelashes N only go with eye N
+    if DEBUG_LEVEL >= 1:
+        print_debug_message_once(f"\tFiltering eyelashes based on {EYES_NUM_CHOSEN}\n")
+
+    new_leaves = [
+        leaf for leaf in leaves
+        if any([EYES_NUM_CHOSEN in leaf, "eyelashes_no" in leaf])
+    ]
+
+    if DEBUG_LEVEL >= 1:
+        sys.stderr.write(f"\tPicking eyelashes leaf from: {new_leaves}\n")
 
     index = random.randint(0, len(new_leaves)-1)
     return new_leaves[index]
@@ -273,7 +305,7 @@ def pick_variant_random_approach(variants):
     return variants[index]
 
 
-def pick_variant(variants):
+def pick_variant(variants: List[str]):
 
     global MOUTH_06_HAS_BEEN_CHOSEN
 
@@ -310,12 +342,14 @@ def pick_variant(variants):
         if we_are_choosing_head_gadgets:
             variants = [v for v in variants if 'no_gadget' in v]
 
-    # Special case for Mouths/Skins:
+    # Special case: some Mouths only go with some skins
     we_are_choosing_mouths = [v for v in variants if 'mouth_' in v]
     skin_has_mouth_filter = SKINS_TO_VALID_MOUTHS_MAP.get(SKIN_STREAM)
 
     if we_are_choosing_mouths and skin_has_mouth_filter:
-        print_debug_message_once(f"\tFiltering mouths based on {SKIN_STREAM} skin\n")
+        if DEBUG_LEVEL > 1:
+            print_debug_message_once(f"\tFiltering mouths based on {SKIN_STREAM} skin\n")
+
         valid_mouths_numbers = [str(n) for n in skin_has_mouth_filter]
         filtered_variants = []
         for variant in variants:
@@ -399,6 +433,7 @@ def traverse(tree: list, branch: list, parent_dir: str):
     global EARS_2_HAS_BEEN_CHOSEN
     global HANDS_07_HAS_BEEN_CHOSEN
     global HEAD_GADGET_CHOSEN
+    global EYES_NUM_CHOSEN
 
     if DEBUG_LEVEL >= 2:
         sys.stderr.write("Looking into %s\n" % parent_dir)
@@ -500,21 +535,21 @@ def traverse(tree: list, branch: list, parent_dir: str):
             sys.stderr.write(f"\t*** Chosen stream: '{SKIN_STREAM}'\n")
 
     # Are we in the special case of mouths 04/05 ?
-    if EYES_12_REGEX.match(final_leaf):
+    if final_leaf.startswith("eyes_12"):
         EYES_12_HAS_BEEN_CHOSEN = True
         if DEBUG_LEVEL >= 1:
-            print_debug_message_once("\t--> Chosen Eyes 12. Special behaviour will be activated.\n")
+            print_debug_message_once("\t--> Chosen eyes_12. Special behaviour will be activated.\n")
 
     # Are we in the special case of mouths/hands 06 ?
     if MOUTH_06_REGEX.match(final_leaf):
         MOUTH_06_HAS_BEEN_CHOSEN = True
         if DEBUG_LEVEL >= 1:
-            print_debug_message_once("\t--> Chosen mouth 06. Special behaviour will be activated.\n")
+            print_debug_message_once("\t--> Chosen mouth_06. Special behaviour will be activated.\n")
 
     if MOUTH_06_HAS_GADGET_REGEX.match(final_leaf):
         MOUTH_06_HAS_GADGETS = True
         if DEBUG_LEVEL >= 1:
-            print_debug_message_once("\t--> mouth 06 has gadgets. No gadgets should appear in 'hands'\n")
+            print_debug_message_once("\t--> mouth_06 has gadgets. No gadgets should appear in 'hands'\n")
 
     # Special case for Ears 2
     if EARS_2_REGEX.match(final_leaf):
@@ -527,6 +562,13 @@ def traverse(tree: list, branch: list, parent_dir: str):
         HANDS_07_HAS_BEEN_CHOSEN = True
         if DEBUG_LEVEL >= 1:
             print_debug_message_once("\t--> hands 7 has been chosen. We should have no mouth gadgets.\n")
+
+    # Special case: eyelashes N only go with eye N
+    if "eyes" in final_leaf and not EYES_NUM_CHOSEN:
+        eyes_match = EYES_REGEX.match(final_leaf)
+        EYES_NUM_CHOSEN = eyes_match.group()
+        if DEBUG_LEVEL >= 1:
+            print_debug_message_once(f"\t--> eyes num chosen: {EYES_NUM_CHOSEN}.\n")
 
     branch.append(final_leaf)
 
